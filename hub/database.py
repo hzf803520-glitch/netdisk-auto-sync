@@ -83,6 +83,23 @@ def _translate_sql(sql: str) -> str:
     sql = re.sub(r"INSERT\s+OR\s+IGNORE\s+INTO", "INSERT INTO", sql, flags=re.I)
     if re.match(r"INSERT\s+INTO\s+settings\s*\(", sql, flags=re.I) and "ON CONFLICT" not in sql.upper():
         sql += " ON CONFLICT DO NOTHING"
+
+    # PostgreSQL compatibility fixes for queries that SQLite accepts more loosely.
+    # 1) PostgreSQL requires every selected non-aggregate column to appear in GROUP BY.
+    sql = re.sub(
+        r"GROUP\s+BY\s+c\.task_id\s*,\s*c\.folder_path",
+        "GROUP BY c.task_id,t.name,t.platform,c.folder_path",
+        sql,
+        flags=re.I,
+    )
+    # 2) Make bigint/text concatenation explicit for DISTINCT folder counting.
+    sql = re.sub(
+        r"task_id\s*\|\|\s*':'\s*\|\|\s*folder_path",
+        "CAST(task_id AS TEXT) || ':' || folder_path",
+        sql,
+        flags=re.I,
+    )
+
     sql = _QMARK_RE.sub("%s", sql)
     return sql
 

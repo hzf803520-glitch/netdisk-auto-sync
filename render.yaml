@@ -5,7 +5,7 @@ services:
     plan: free
     region: singapore
     buildCommand: pip install -r requirements.txt && python -m compileall -q hub
-    startCommand: python hub/share_app.py
+    startCommand: python hub/pipeline_app.py
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:
@@ -25,3 +25,15 @@ services:
         sync: false
       - key: BAIDU_TRANSFER_DIR
         value: /资源数据
+      - key: WPS_APP_ID
+        sync: false
+      - key: WPS_APP_KEY
+        sync: false
+      - key: WPS_ACCESS_TOKEN
+        sync: false
+      - key: TMDB_API_KEY
+        sync: false
+      - key: RESOURCE_API_URL
+        sync: false
+      - key: RESOURCE_API_TOKEN
+        sync: false

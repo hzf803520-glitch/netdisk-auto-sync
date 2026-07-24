@@ -384,6 +384,9 @@ def login_status(request: Request):
         "provider": str(session.get("provider") or ""),
         "status": str(session.get("status") or "pending"),
         "message": str(session.get("message") or ""),
+        "browserReady": runtime.browsers.has_session(
+            str(session.get("session_id") or "")
+        ),
         "expiresAt": _expires_at(float(session.get("expires_at") or 0)),
     }
 
@@ -432,7 +435,7 @@ LOGIN_PAGE = r"""<!doctype html>
     .notice{margin:18px 24px 0;padding:12px 14px;border-radius:12px;background:#f5f1ff;color:#5942a8;font-size:13px}
     .screen-wrap{margin:18px 24px;background:#171622;border-radius:14px;min-height:400px;display:grid;place-items:center;overflow:hidden;position:relative}
     #screen{display:block;max-width:100%;height:auto;cursor:crosshair;user-select:none}
-    #loading{position:absolute;color:#d6d1e8;font-size:14px}.tools{display:flex;gap:10px;flex-wrap:wrap;padding:0 24px 24px}
+    #loading{position:absolute;color:#d6d1e8;font-size:14px;line-height:1.7;text-align:center;max-width:78%}.tools{display:flex;gap:10px;flex-wrap:wrap;padding:0 24px 24px}
     input{min-width:260px;flex:1;border:1px solid #dcd7e8;border-radius:10px;padding:11px 12px;font:inherit}
     button{border:1px solid #dcd7e8;background:#fff;color:#403b52;border-radius:10px;padding:10px 14px;cursor:pointer}
     button.primary{background:#6d4aff;border-color:#6d4aff;color:#fff}.status{padding:0 24px 20px;font-size:13px;color:#656075}
@@ -462,6 +465,7 @@ LOGIN_PAGE = r"""<!doctype html>
       const loading = document.querySelector("#loading");
       const status = document.querySelector("#status");
       let stopped = false, imageUrl = "";
+      let browserReady = false, screenFailures = 0;
       const json = async (url, options={}) => {
         const response = await fetch(url, {...options, headers:{...headers,...(options.headers||{})}, cache:"no-store"});
         const data = await response.json().catch(() => ({}));
@@ -476,18 +480,38 @@ LOGIN_PAGE = r"""<!doctype html>
         try{
           const data=await json("/executor-login/status");
           status.textContent=data.message || "等待登录";
-          if(data.status!=="pending"){stopped=true;loading.textContent=data.status==="connected"?"登录成功，可以关闭此窗口":"本次登录未完成"}
+          browserReady=Boolean(data.browserReady);
+          if(data.status==="pending" && !browserReady){
+            loading.style.display="block";
+            loading.textContent="正在启动安全登录浏览器，请稍候…";
+          }
+          if(data.status!=="pending"){
+            stopped=true;
+            loading.style.display="block";
+            loading.textContent=data.status==="connected"
+              ?"登录成功，可以关闭此窗口"
+              :(data.message || "本次登录未完成，请返回管理页重试");
+          }
         }catch(error){status.textContent=error.message}
       }
       async function updateScreen(){
-        if(stopped)return;
+        if(stopped || !browserReady)return;
         try{
           const response=await fetch("/executor-login/screenshot",{headers,cache:"no-store"});
-          if(!response.ok)throw new Error();
+          if(!response.ok){
+            const data=await response.json().catch(() => ({}));
+            throw new Error(data.detail || "暂时无法读取登录画面");
+          }
           const blob=await response.blob();
           if(imageUrl)URL.revokeObjectURL(imageUrl);
-          imageUrl=URL.createObjectURL(blob);screen.src=imageUrl;loading.style.display="none";
-        }catch{loading.style.display="block"}
+          imageUrl=URL.createObjectURL(blob);screen.src=imageUrl;
+          screenFailures=0;loading.style.display="none";
+        }catch(error){
+          screenFailures+=1;loading.style.display="block";
+          loading.textContent=screenFailures>2
+            ?`${error.message}。正在自动重试…`
+            :"正在读取官方网盘登录画面…";
+        }
       }
       screen.addEventListener("click", async (event) => {
         const rect=screen.getBoundingClientRect();
@@ -504,7 +528,7 @@ LOGIN_PAGE = r"""<!doctype html>
       document.querySelector("#refresh").addEventListener("click", async () => {
         await control({action:"refresh"});setTimeout(updateScreen,500);
       });
-      updateStatus();updateScreen();
+      updateStatus().then(updateScreen);
       setInterval(updateStatus,1500);setInterval(updateScreen,2000);
     })();
   </script>

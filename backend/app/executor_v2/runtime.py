@@ -32,6 +32,7 @@ class ExecutorRuntime:
         self._stop = threading.Event()
         self._janitor: threading.Thread | None = None
         self._auth_lock = threading.RLock()
+        self._launching: set[str] = set()
         self._validating: set[str] = set()
 
     def start(self) -> None:
@@ -71,6 +72,14 @@ class ExecutorRuntime:
                 self.browsers.close(old_session_id)
             session = self.store.create_login_session(provider)
         session_id = str(session["session_id"])
+        self._ensure_login_browser(session_id, provider)
+        return session
+
+    def _ensure_login_browser(self, session_id: str, provider: str) -> None:
+        with self._auth_lock:
+            if self.browsers.has_session(session_id) or session_id in self._launching:
+                return
+            self._launching.add(session_id)
         thread = threading.Thread(
             target=self._launch_login,
             args=(session_id, provider),
@@ -78,7 +87,6 @@ class ExecutorRuntime:
             daemon=True,
         )
         thread.start()
-        return session
 
     def poll_login(
         self,
@@ -94,6 +102,7 @@ class ExecutorRuntime:
                 self.browsers.close(session_id)
             return session
         if not self.browsers.has_session(session_id):
+            self._ensure_login_browser(session_id, provider)
             return session
 
         try:
@@ -127,6 +136,11 @@ class ExecutorRuntime:
             raise RuntimeError("登录窗口无效")
         if session.get("status") == "expired":
             self.browsers.close(str(session["session_id"]))
+        elif session.get("status") == "pending":
+            self._ensure_login_browser(
+                str(session["session_id"]),
+                str(session["provider"]),
+            )
         return session
 
     def screenshot(self, public_token: str) -> bytes:
@@ -185,6 +199,9 @@ class ExecutorRuntime:
                 message=_browser_launch_message(exc),
             )
             self.browsers.close(session_id)
+        finally:
+            with self._auth_lock:
+                self._launching.discard(session_id)
 
     def _complete_login(
         self,

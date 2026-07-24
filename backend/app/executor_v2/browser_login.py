@@ -19,6 +19,9 @@ from selenium.webdriver.common.keys import Keys
 
 logger = logging.getLogger(__name__)
 
+VIEWPORT_WIDTH = 1024
+VIEWPORT_HEIGHT = 700
+
 PROVIDER_LOGIN_URLS = {
     "baidu": "https://pan.baidu.com/",
     "quark": "https://pan.quark.cn/",
@@ -57,23 +60,44 @@ class BrowserLoginManager:
         options.binary_location = binary
         options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
+        options.add_argument("--disable-setuid-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
-        options.add_argument("--disable-software-rasterizer")
+        # Keep software rendering available. Chromium's new headless mode needs
+        # it when no GPU is present; disabling it made Chromium exit during
+        # startup on Render's 512 MB free instance.
+        options.add_argument("--remote-debugging-pipe")
+        options.add_argument("--no-first-run")
+        options.add_argument("--no-default-browser-check")
+        options.add_argument("--disable-sync")
+        options.add_argument("--disable-notifications")
+        options.add_argument("--disable-crash-reporter")
+        options.add_argument("--disable-breakpad")
+        options.add_argument("--no-zygote")
+        options.add_argument("--renderer-process-limit=1")
+        options.add_argument("--disk-cache-size=1")
+        options.add_argument("--media-cache-size=1")
+        options.add_argument("--js-flags=--max-old-space-size=128")
         options.add_argument("--disable-background-networking")
         options.add_argument("--disable-component-update")
         options.add_argument("--disable-default-apps")
         options.add_argument("--disable-extensions")
-        options.add_argument("--disable-features=Translate,MediaRouter")
+        options.add_argument(
+            "--disable-features="
+            "Translate,MediaRouter,OptimizationHints,"
+            "AutofillServerCommunication,CalculateNativeWinOcclusion"
+        )
         options.add_argument("--disable-popup-blocking")
         options.add_argument("--hide-scrollbars")
         options.add_argument("--lang=zh-CN")
-        options.add_argument("--window-size=1280,820")
+        options.add_argument(f"--window-size={VIEWPORT_WIDTH},{VIEWPORT_HEIGHT}")
         options.add_argument(f"--user-data-dir={profile_path}")
+        options.page_load_strategy = "eager"
         options.add_experimental_option(
             "excludeSwitches", ["enable-automation", "enable-logging"]
         )
 
+        driver: webdriver.Chrome | None = None
         try:
             driver_binary = os.getenv("CHROMEDRIVER_BINARY", "/usr/bin/chromedriver")
             service = (
@@ -82,11 +106,16 @@ class BrowserLoginManager:
                 else Service()
             )
             driver = webdriver.Chrome(service=service, options=options)
-            driver.set_page_load_timeout(45)
+            driver.set_page_load_timeout(30)
             driver.set_script_timeout(15)
             driver.get(PROVIDER_LOGIN_URLS[provider])
-            time.sleep(3)
+            time.sleep(2)
         except Exception:
+            if driver:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
             shutil.rmtree(profile_path, ignore_errors=True)
             raise
 
@@ -117,8 +146,8 @@ class BrowserLoginManager:
 
     def click(self, session_id: str, x: float, y: float) -> None:
         driver = self._driver(session_id)
-        safe_x = max(0.0, min(float(x), 1280.0))
-        safe_y = max(0.0, min(float(y), 820.0))
+        safe_x = max(0.0, min(float(x), float(VIEWPORT_WIDTH)))
+        safe_y = max(0.0, min(float(y), float(VIEWPORT_HEIGHT)))
         with self._locks[session_id]:
             driver.execute_cdp_cmd(
                 "Input.dispatchMouseEvent",

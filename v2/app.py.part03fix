@@ -1,0 +1,83 @@
+
+
+# 覆盖前面的登录助手生成函数：使用 raw 模板，避免 \n 在生成阶段被展开成真实换行。
+def helper_python(platform: str, code: str, base_url: str) -> str:
+    login_url = SUPPORTED_PLATFORMS[platform]["login"]
+    template = r'''#!/usr/bin/env python3
+import json
+import sys
+import urllib.request
+from playwright.sync_api import sync_playwright
+
+BACKEND = __BACKEND__
+PAIR_CODE = __PAIR_CODE__
+PLATFORM = __PLATFORM__
+LOGIN_URL = __LOGIN_URL__
+
+
+def find_tokens(value, found):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            low = str(key).lower()
+            if "refresh" in low and "token" in low and isinstance(item, str):
+                found.setdefault("refresh_token", item)
+            if "access" in low and "token" in low and isinstance(item, str):
+                found.setdefault("access_token", item)
+            find_tokens(item, found)
+    elif isinstance(value, list):
+        for item in value:
+            find_tokens(item, found)
+    elif isinstance(value, str) and value[:1] in "[{":
+        try:
+            find_tokens(json.loads(value), found)
+        except Exception:
+            pass
+
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=False)
+    context = browser.new_context(viewport={"width": 1280, "height": 800})
+    page = context.new_page()
+    page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=120000)
+    print("\n请在打开的浏览器中完成登录。登录成功后，回到这个终端窗口按回车。\n")
+    input()
+    cookies = context.cookies()
+    cookie_text = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+    payload = {"cookie": cookie_text}
+    if PLATFORM == "xunlei":
+        found = {}
+        for pg in context.pages:
+            try:
+                values = pg.evaluate("Object.fromEntries(Object.entries(localStorage))")
+                find_tokens(values, found)
+            except Exception:
+                pass
+        find_tokens(cookies, found)
+        payload.update(found)
+    request_body = json.dumps({"code": PAIR_CODE, "platform": PLATFORM, "credentials": payload}).encode("utf-8")
+    req = urllib.request.Request(
+        BACKEND.rstrip("/") + "/api/helper/credential",
+        data=request_body,
+        headers={"Content-Type": "application/json", "User-Agent": "NetdiskLoginHelper/2"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        if not result.get("success"):
+            raise RuntimeError(result.get("message") or "后台拒绝保存")
+        print("\n✅ 登录状态已安全保存到你的后台。可以关闭此窗口。\n")
+    except Exception as exc:
+        print("\n❌ 上传失败：", exc)
+        print("请不要关闭窗口，截图这个错误返回给系统管理员。")
+        input("按回车退出...")
+        sys.exit(1)
+    finally:
+        browser.close()
+'''
+    return (
+        template.replace("__BACKEND__", repr(base_url))
+        .replace("__PAIR_CODE__", repr(code))
+        .replace("__PLATFORM__", repr(platform))
+        .replace("__LOGIN_URL__", repr(login_url))
+    )

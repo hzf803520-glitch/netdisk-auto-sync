@@ -27,10 +27,33 @@ jobs:
           python-version: "3.12"
       - name: 安装 Python 依赖
         run: pip install -r requirements.txt
-      - name: 验证 Python 主程序
+      - name: 验证 Python 主程序与文档解析
         run: |
           cat v2/app.py.part* > /tmp/netdisk-app.py
           python -m py_compile /tmp/netdisk-app.py v2/app.py
+          python - <<'PY'
+          import importlib.util
+          import os
+          os.environ.update({
+              "DATABASE_URL": "postgresql://example.invalid/db",
+              "ADMIN_PASSWORD": "test-password",
+              "CRON_SECRET": "test-cron",
+              "COOKIE_ENCRYPTION_KEY": "test-encryption-key",
+          })
+          spec = importlib.util.spec_from_file_location("netdisk_app", "/tmp/netdisk-app.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          records = module.parse_text_records(
+              "千香 更新至12集 https://pan.quark.cn/s/abc123\n"
+              "千香 百度 https://pan.baidu.com/s/xyz987?pwd=8888\n"
+              "某动漫\nhttps://drive.uc.cn/s/uc123"
+          )
+          assert len(records) == 3, records
+          assert records[0]["title"].startswith("千香"), records
+          assert records[1]["source_code"] == "8888", records
+          compile(module.helper_python("quark", "PAIRCODE", "https://example.com"), "helper.py", "exec")
+          print(records)
+          PY
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"

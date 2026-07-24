@@ -1,0 +1,172 @@
+            if path == "/api/export.csv":
+                with connect_db() as conn:
+                    rows = conn.execute(
+                        "SELECT title,platform,source_url,source_code,target_url,target_code,status,last_message,updated_at FROM resources ORDER BY title,platform"
+                    ).fetchall()
+                buf = io.StringIO()
+                writer = csv.writer(buf)
+                writer.writerow(["剧名", "平台", "原链接", "原提取码", "我的新链接", "新提取码", "状态", "说明", "更新时间"])
+                for row in rows:
+                    writer.writerow([
+                        row["title"],
+                        SUPPORTED_PLATFORMS.get(row["platform"], {}).get("name", row["platform"]),
+                        row["source_url"], row["source_code"], row["target_url"], row["target_code"],
+                        row["status"], row["last_message"], row["updated_at"],
+                    ])
+                self.send_bytes(("\ufeff" + buf.getvalue()).encode("utf-8"), "text/csv; charset=utf-8", "网盘资源对应表.csv")
+                return
+            match = re.fullmatch(r"/api/pair/([A-Z0-9]+)/helper\.zip", path)
+            if match:
+                code = match.group(1)
+                code_hash = hash_pair_code(code)
+                with connect_db() as conn:
+                    row = conn.execute(
+                        "SELECT platform,expires_at,used_at FROM pair_tokens WHERE code_hash=%s",
+                        (code_hash,),
+                    ).fetchone()
+                if not row or row["used_at"] or row["expires_at"] < now_utc():
+                    self.send_json({"success": False, "message": "配对码无效或已过期"}, 410)
+                    return
+                body = make_helper_zip(row["platform"], code, self.base_url())
+                filename = f"{SUPPORTED_PLATFORMS[row['platform']]['name']}-登录助手.zip"
+                self.send_bytes(body, "application/zip", filename)
+                return
+            self.send_json({"success": False, "message": "接口不存在"}, 404)
+        except Exception as exc:
+            self.send_json({"success": False, "message": str(exc)}, 500)
+
+    def do_POST(self) -> None:
+        parsed = urllib.parse.urlsplit(self.path)
+        path = parsed.path
+        try:
+            if path == "/api/helper/credential":
+                data = self.read_json()
+                platform = str(data.get("platform") or "")
+                code = str(data.get("code") or "")
+                credentials = data.get("credentials") or {}
+                consume_pair(code, platform)
+                save_credentials(platform, credentials, "login_helper")
+                self.send_json({"success": True, "message": "登录状态保存成功"})
+                return
+            if path == "/api/cron/run":
+                secret = self.headers.get("X-Cron-Secret", "")
+                if not secret:
+                    secret = urllib.parse.parse_qs(parsed.query).get("secret", [""])[0]
+                if not hmac.compare_digest(secret, CRON_SECRET):
+                    self.send_json({"success": False, "message": "CRON_SECRET 不正确"}, 403)
+                    return
+                started = start_sync_job("github-actions", due_only=True)
+                self.send_json({"success": True, "message": "已开始检查到期任务" if started else "已有任务正在运行", "started": started})
+                return
+            if not self.require_auth():
+                return
+            if path == "/api/import/text":
+                data = self.read_json()
+                records = parse_text_records(str(data.get("text") or ""))
+                if not records:
+                    raise ValueError("没有识别到百度、夸克、UC或迅雷分享链接")
+                result = import_records(records, int(data.get("interval_minutes") or DEFAULT_INTERVAL))
+                log_event("info", "import", f"文本导入 {result['total']} 条资源")
+                self.send_json({"success": True, "result": result})
+                return
+            if path == "/api/import/file":
+                content_type = self.headers.get("Content-Type", "")
+                if "multipart/form-data" not in content_type:
+                    raise ValueError("上传格式不正确")
+                boundary_match = re.search(r"boundary=(.+)", content_type)
+                if not boundary_match:
+                    raise ValueError("上传缺少 boundary")
+                boundary = boundary_match.group(1).strip().strip('"').encode()
+                length = int(self.headers.get("Content-Length", "0") or 0)
+                if length > 25_000_000:
+                    raise ValueError("文件不能超过 25MB")
+                raw = self.rfile.read(length)
+                parts = raw.split(b"--" + boundary)
+                filename = ""
+                file_data = b""
+                interval_minutes = DEFAULT_INTERVAL
+                for part in parts:
+                    if b"\r\n\r\n" not in part:
+                        continue
+                    headers_raw, body = part.split(b"\r\n\r\n", 1)
+                    body = body[:-2] if body.endswith(b"\r\n") else body
+                    headers_text = headers_raw.decode("utf-8", "ignore")
+                    name_match = re.search(r'name="([^"]+)"', headers_text)
+                    if not name_match:
+                        continue
+                    field_name = name_match.group(1)
+                    if field_name == "file":
+                        filename_match = re.search(r'filename="([^"]*)"', headers_text)
+                        filename = filename_match.group(1) if filename_match else "upload.txt"
+                        file_data = body
+                    elif field_name == "interval_minutes":
+                        interval_minutes = int(body.decode("utf-8", "ignore") or DEFAULT_INTERVAL)
+                if not file_data:
+                    raise ValueError("没有收到文件")
+                records = parse_uploaded_file(filename, file_data)
+                if not records:
+                    raise ValueError("文档中没有识别到受支持的网盘分享链接")
+                result = import_records(records, interval_minutes)
+                log_event("info", "import", f"文件 {filename} 导入 {result['total']} 条资源")
+                self.send_json({"success": True, "result": result})
+                return
+            if path == "/api/pair":
+                data = self.read_json()
+                platform = str(data.get("platform") or "")
+                code, expires = create_pair(platform)
+                self.send_json(
+                    {
+                        "success": True,
+                        "code": code,
+                        "expires_at": iso(expires),
+                        "download_url": f"/api/pair/{code}/helper.zip",
+                    }
+                )
+                return
+            match = re.fullmatch(r"/api/credentials/(baidu|quark|uc|xunlei)", path)
+            if match:
+                data = self.read_json()
+                save_credentials(match.group(1), data.get("credentials") or {}, "manual")
+                self.send_json({"success": True, "message": "凭证保存成功"})
+                return
+            if path == "/api/run-all":
+                started = start_sync_job("manual-all", due_only=False)
+                self.send_json({"success": True, "message": "已开始执行全部任务" if started else "已有任务正在运行", "started": started})
+                return
+            match = re.fullmatch(r"/api/resources/(\d+)/run", path)
+            if match:
+                started = start_sync_job("manual-one", resource_id=int(match.group(1)), due_only=False)
+                self.send_json({"success": True, "message": "已开始转存" if started else "已有任务正在运行", "started": started})
+                return
+            self.send_json({"success": False, "message": "接口不存在"}, 404)
+        except ValueError as exc:
+            self.send_json({"success": False, "message": str(exc)}, 400)
+        except Exception as exc:
+            log_event("error", "api", str(exc), details=traceback.format_exc())
+            self.send_json({"success": False, "message": str(exc)}, 500)
+
+    def do_DELETE(self) -> None:
+        if not self.require_auth():
+            return
+        path = urllib.parse.urlsplit(self.path).path
+        match = re.fullmatch(r"/api/resources/(\d+)", path)
+        if not match:
+            self.send_json({"success": False, "message": "接口不存在"}, 404)
+            return
+        resource_id = int(match.group(1))
+        with connect_db() as conn:
+            conn.execute("DELETE FROM resources WHERE id=%s", (resource_id,))
+            conn.commit()
+        self.send_json({"success": True, "message": "记录已删除"})
+
+
+def main() -> None:
+    require_env()
+    init_db()
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    print(f"{APP_NAME} 已启动：http://{HOST}:{PORT}")
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,220 @@
+                find_tokens(values, found)
+            except Exception:
+                pass
+        find_tokens(cookies, found)
+        payload.update(found)
+    request_body = json.dumps({{"code": PAIR_CODE, "platform": PLATFORM, "credentials": payload}}).encode("utf-8")
+    req = urllib.request.Request(
+        BACKEND.rstrip("/") + "/api/helper/credential",
+        data=request_body,
+        headers={{"Content-Type": "application/json", "User-Agent": "NetdiskLoginHelper/2"}},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        if not result.get("success"):
+            raise RuntimeError(result.get("message") or "后台拒绝保存")
+        print("\n✅ 登录状态已安全保存到你的后台。可以关闭此窗口。\n")
+    except Exception as exc:
+        print("\n❌ 上传失败：", exc)
+        print("请不要关闭窗口，截图这个错误返回给系统管理员。")
+        input("按回车退出...")
+        sys.exit(1)
+    finally:
+        browser.close()
+'''
+
+
+def helper_command() -> str:
+    return '''#!/bin/bash
+set -e
+cd "$(dirname "$0")"
+echo "正在准备网盘登录助手，请保持网络畅通..."
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "没有找到 Python 3。请先安装 Python 3 后重试。"
+  read -p "按回车退出..."
+  exit 1
+fi
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/pip install playwright
+.venv/bin/python -m playwright install chromium
+.venv/bin/python helper.py
+'''
+
+
+def make_helper_zip(platform: str, code: str, base_url: str) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        command_info = zipfile.ZipInfo("开始登录.command")
+        command_info.external_attr = (0o755 & 0xFFFF) << 16
+        zf.writestr(command_info, helper_command())
+        helper_info = zipfile.ZipInfo("helper.py")
+        helper_info.external_attr = (0o644 & 0xFFFF) << 16
+        zf.writestr(helper_info, helper_python(platform, code, base_url))
+        zf.writestr(
+            "使用说明.txt",
+            "1. 解压此压缩包。\n2. 双击“开始登录.command”。\n3. 在弹出的浏览器完成登录。\n4. 登录成功后回到终端按回车。\n5. 后台会自动保存登录状态。\n",
+        )
+    return buffer.getvalue()
+
+
+INDEX_HTML = r'''<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>网盘自动转存与追更系统</title>
+<style>
+:root{--bg:#f5f7fb;--card:#fff;--text:#172033;--muted:#667085;--line:#e5e7eb;--primary:#4f46e5;--ok:#059669;--warn:#b45309;--bad:#b42318}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+header{padding:28px 5vw;background:linear-gradient(135deg,#111827,#4338ca);color:white}header h1{margin:0 0 8px;font-size:28px}header p{margin:0;opacity:.86}
+main{max-width:1480px;margin:22px auto;padding:0 18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 8px 28px rgba(16,24,40,.04)}
+h2,h3{margin:0 0 12px}.field{display:flex;flex-direction:column;gap:6px;margin:8px 0}input,select,textarea{width:100%;border:1px solid #d0d5dd;border-radius:10px;padding:10px 11px;font-size:14px;background:white}textarea{min-height:122px;resize:vertical}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}.btn{border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}.primary{background:var(--primary);color:white}.ok{background:var(--ok);color:white}.secondary{background:#eef2ff;color:#3730a3}.danger{background:#fee4e2;color:#912018}.muted{color:var(--muted);font-size:13px}.notice{padding:12px;border-radius:10px;background:#fffaeb;color:#7a2e0e;font-size:13px}.status{padding:12px;border-radius:10px;background:#f2f4f7;white-space:pre-wrap;font-size:13px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px;min-width:1120px}th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{white-space:nowrap;background:#fafafa}.url{max-width:270px;word-break:break-all}.tag{display:inline-block;padding:3px 8px;border-radius:99px;background:#f2f4f7}.success{color:var(--ok)}.failed{color:var(--bad)}.running{color:var(--primary)}.waiting_credentials{color:var(--warn)}.pending{color:var(--muted)}
+summary{cursor:pointer;font-weight:700}.login-grid{display:grid;grid-template-columns:repeat(4,minmax(170px,1fr));gap:10px}@media(max-width:850px){.login-grid{grid-template-columns:1fr 1fr}header h1{font-size:23px}}
+</style>
+</head>
+<body>
+<header><h1>网盘自动转存与追更系统</h1><p>批量导入剧名和分享链接，自动转存到你的百度、夸克、UC、迅雷网盘，并保存剧名与新链接对应关系。</p></header>
+<main>
+<div class="grid">
+<section class="card">
+<h3>① 批量导入资源</h3>
+<div class="field"><label>检查周期</label><select id="interval"><option value="15">每15分钟</option><option value="30">每30分钟</option><option value="60" selected>每小时</option><option value="180">每3小时</option><option value="360">每6小时</option><option value="720">每12小时</option><option value="1440">每天</option></select></div>
+<div class="field"><label>直接粘贴文档内容</label><textarea id="importText" placeholder="示例：\n千香 更新至12集 https://pan.quark.cn/s/xxxx\n千香 百度链接 https://pan.baidu.com/s/xxxx?pwd=8888"></textarea></div>
+<div class="actions"><button class="btn primary" onclick="importText()">解析并保存</button></div>
+<div class="field"><label>上传文档（TXT / CSV / XLSX / DOCX）</label><input id="file" type="file" accept=".txt,.csv,.xlsx,.docx"></div>
+<div class="actions"><button class="btn secondary" onclick="uploadFile()">上传并导入</button></div>
+</section>
+<section class="card">
+<h3>② 绑定你的网盘账号</h3>
+<div class="notice">点击平台按钮下载登录助手。解压后双击“开始登录.command”，在真实浏览器完成登录；系统会自动保存登录状态，不需要手动查找 Cookie。</div>
+<div class="login-grid" id="loginGrid"></div>
+<details><summary>迅雷令牌或高级手动绑定</summary><div class="field"><label>平台</label><select id="manualPlatform"><option value="baidu">百度</option><option value="quark">夸克</option><option value="uc">UC</option><option value="xunlei">迅雷</option></select></div><div class="field"><label>Cookie（百度/夸克/UC）</label><textarea id="manualCookie" placeholder="仅保存在加密数据库，不会回显"></textarea></div><div class="field"><label>迅雷 Refresh Token</label><input id="refreshToken"></div><div class="field"><label>迅雷 Access Token</label><input id="accessToken"></div><button class="btn secondary" onclick="saveManualCredential()">保存凭证</button></details>
+</section>
+<section class="card">
+<h3>③ 执行与导出</h3>
+<div id="jobState" class="status">正在读取状态…</div>
+<div class="actions"><button class="btn ok" onclick="runAll()">立即转存全部</button><button class="btn secondary" onclick="loadAll()">刷新页面</button><a class="btn secondary" href="/api/export.csv">导出剧名与新链接</a></div>
+<p class="muted">免费方案由 GitHub Actions 定时唤醒 Render。源分享更新后会在下一次检查中重新转存并刷新新分享链接；网盘未提供稳定实时推送，因此不能保证 0 秒触发。</p>
+</section>
+</div>
+<section class="card"><h3>资源对应表</h3><div class="table-wrap"><table><thead><tr><th>剧名</th><th>平台</th><th>原分享链接</th><th>我的新分享链接</th><th>周期</th><th>状态</th><th>最后执行</th><th>操作</th></tr></thead><tbody id="resources"></tbody></table></div></section>
+<section class="card"><h3>运行日志</h3><div class="table-wrap"><table><thead><tr><th>时间</th><th>级别</th><th>动作</th><th>资源</th><th>内容</th></tr></thead><tbody id="logs"></tbody></table></div></section>
+</main>
+<script>
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const platformNames={baidu:'百度网盘',quark:'夸克网盘',uc:'UC网盘',xunlei:'迅雷云盘'};
+async function api(url,opt={}){const r=await fetch(url,{headers:{'Content-Type':'application/json',...(opt.headers||{})},...opt});let j;try{j=await r.json()}catch(e){throw new Error('后台没有返回JSON')}if(!r.ok||!j.success)throw new Error(j.message||'操作失败');return j}
+function toast(msg){alert(msg)}
+async function loadCredentials(){const j=await api('/api/credentials');document.getElementById('loginGrid').innerHTML=Object.keys(platformNames).map(p=>{const c=j.items.find(x=>x.platform===p);return `<button class="btn ${c?'ok':'secondary'}" onclick="pair('${p}')">${esc(platformNames[p])}<br><small>${c?'已绑定 '+esc(c.updated_at||''):'点击登录绑定'}</small></button>`}).join('')}
+async function pair(platform){try{const j=await api('/api/pair',{method:'POST',body:JSON.stringify({platform})});window.location.href=j.download_url;toast('登录助手已下载。请解压后双击“开始登录.command”。')}catch(e){toast(e.message)}}
+async function saveManualCredential(){try{const p=document.getElementById('manualPlatform').value;const credentials={cookie:document.getElementById('manualCookie').value,refresh_token:document.getElementById('refreshToken').value,access_token:document.getElementById('accessToken').value};await api('/api/credentials/'+p,{method:'POST',body:JSON.stringify({credentials})});document.getElementById('manualCookie').value='';document.getElementById('refreshToken').value='';document.getElementById('accessToken').value='';toast('保存成功');loadCredentials()}catch(e){toast(e.message)}}
+async function importText(){try{const text=document.getElementById('importText').value;if(!text.trim())throw new Error('请先粘贴文档内容');const j=await api('/api/import/text',{method:'POST',body:JSON.stringify({text,interval_minutes:Number(document.getElementById('interval').value)})});toast(`导入完成：新增 ${j.result.inserted}，更新 ${j.result.updated}`);loadAll()}catch(e){toast(e.message)}}
+async function uploadFile(){try{const f=document.getElementById('file').files[0];if(!f)throw new Error('请选择文件');const fd=new FormData();fd.append('file',f);fd.append('interval_minutes',document.getElementById('interval').value);const r=await fetch('/api/import/file',{method:'POST',body:fd});const j=await r.json();if(!r.ok||!j.success)throw new Error(j.message||'上传失败');toast(`导入完成：新增 ${j.result.inserted}，更新 ${j.result.updated}`);loadAll()}catch(e){toast(e.message)}}
+async function loadResources(){const j=await api('/api/resources');document.getElementById('resources').innerHTML=j.items.map(x=>`<tr><td><b>${esc(x.title)}</b></td><td><span class="tag">${esc(platformNames[x.platform]||x.platform)}</span></td><td class="url"><a href="${esc(x.source_url)}" target="_blank">${esc(x.source_url)}</a>${x.source_code?'<br>提取码：'+esc(x.source_code):''}</td><td class="url">${x.target_url?`<a href="${esc(x.target_url)}" target="_blank">${esc(x.target_url)}</a>${x.target_code?'<br>提取码：'+esc(x.target_code):''}`:'尚未生成'}</td><td>${esc(x.interval_minutes)} 分钟</td><td class="${esc(x.status)}">${esc(x.status)}<br><span class="muted">${esc(x.last_message)}</span></td><td>${esc(x.last_run||'-')}</td><td><div class="actions"><button class="btn primary" onclick="runOne(${x.id})">立即转存</button><button class="btn danger" onclick="removeOne(${x.id})">删除</button></div></td></tr>`).join('')||'<tr><td colspan="8" class="muted">暂无资源，请先导入文档。</td></tr>'}
+async function loadLogs(){const j=await api('/api/logs');document.getElementById('logs').innerHTML=j.items.map(x=>`<tr><td>${esc(x.created_at)}</td><td>${esc(x.level)}</td><td>${esc(x.action)}</td><td>${esc(x.title||'-')}</td><td>${esc(x.message)}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">暂无日志</td></tr>'}
+async function loadJob(){const j=await api('/api/job-state');const x=j.state;document.getElementById('jobState').textContent=`${x.message}\n进度：${x.done||0}/${x.total||0}　成功：${x.success||0}　失败：${x.failed||0}`}
+async function runAll(){try{const j=await api('/api/run-all',{method:'POST',body:'{}'});toast(j.message);setTimeout(loadAll,1200)}catch(e){toast(e.message)}}
+async function runOne(id){try{const j=await api('/api/resources/'+id+'/run',{method:'POST',body:'{}'});toast(j.message);setTimeout(loadAll,1200)}catch(e){toast(e.message)}}
+async function removeOne(id){if(!confirm('确定删除这条记录吗？不会删除网盘里的文件。'))return;try{await api('/api/resources/'+id,{method:'DELETE'});loadAll()}catch(e){toast(e.message)}}
+async function loadAll(){try{await Promise.all([loadCredentials(),loadResources(),loadLogs(),loadJob()])}catch(e){document.getElementById('jobState').textContent=e.message}}
+loadAll();setInterval(()=>{loadJob();loadResources();loadLogs();loadCredentials()},10000);
+</script>
+</body></html>'''
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "NetdiskAutoSync/2.0"
+
+    def log_message(self, fmt: str, *args: Any) -> None:
+        print(f"[{self.log_date_time_string()}] {fmt % args}")
+
+    def base_url(self) -> str:
+        forwarded_proto = self.headers.get("X-Forwarded-Proto", "http")
+        host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or f"localhost:{PORT}"
+        return f"{forwarded_proto}://{host}"
+
+    def authorized(self) -> bool:
+        header = self.headers.get("Authorization", "")
+        if not header.startswith("Basic "):
+            return False
+        try:
+            user_pass = base64.b64decode(header[6:]).decode("utf-8")
+            user, password = user_pass.split(":", 1)
+            return hmac.compare_digest(user, ADMIN_USER) and hmac.compare_digest(password, ADMIN_PASSWORD)
+        except Exception:
+            return False
+
+    def require_auth(self) -> bool:
+        if self.authorized():
+            return True
+        self.send_response(HTTPStatus.UNAUTHORIZED)
+        self.send_header("WWW-Authenticate", 'Basic realm="Netdisk Auto Sync"')
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(json.dumps({"success": False, "message": "需要管理员登录"}, ensure_ascii=False).encode())
+        return False
+
+    def send_json(self, payload: dict[str, Any], status: int = 200) -> None:
+        body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_bytes(self, body: bytes, content_type: str, filename: str | None = None) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        if filename:
+            quoted = urllib.parse.quote(filename)
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quoted}")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def read_json(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        if length > 5_000_000:
+            raise ValueError("请求内容过大")
+        body = self.rfile.read(length) if length else b"{}"
+        return json.loads(body.decode("utf-8"))
+
+    def do_GET(self) -> None:
+        parsed = urllib.parse.urlsplit(self.path)
+        path = parsed.path
+        try:
+            if path == "/healthz":
+                self.send_json({"success": True, "status": "ok", "time": iso(now_utc())})
+                return
+            if not self.require_auth():
+                return
+            if path == "/":
+                self.send_bytes(INDEX_HTML.encode("utf-8"), "text/html; charset=utf-8")
+                return
+            if path == "/api/resources":
+                with connect_db() as conn:
+                    rows = conn.execute("SELECT * FROM resources ORDER BY updated_at DESC,id DESC").fetchall()
+                self.send_json({"success": True, "items": rows})
+                return
+            if path == "/api/credentials":
+                with connect_db() as conn:
+                    rows = conn.execute("SELECT platform,source,updated_at FROM credentials ORDER BY platform").fetchall()
+                self.send_json({"success": True, "items": rows})
+                return
+            if path == "/api/logs":
+                with connect_db() as conn:
+                    rows = conn.execute(
+                        """
+                        SELECT l.id,l.level,l.action,l.message,l.created_at,r.title
+                        FROM sync_logs l LEFT JOIN resources r ON r.id=l.resource_id
+                        ORDER BY l.created_at DESC LIMIT 200
+                        """
+                    ).fetchall()
+                self.send_json({"success": True, "items": rows})
+                return
+            if path == "/api/job-state":
+                self.send_json({"success": True, "state": get_job_state()})
+                return

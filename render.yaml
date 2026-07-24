@@ -1,39 +1,26 @@
 services:
   - type: web
     name: netdisk-auto-sync
-    runtime: python
+    runtime: docker
     plan: free
     region: singapore
-    buildCommand: pip install -r requirements.txt && python -m compileall -q hub
-    startCommand: python hub/pipeline_share_app.py
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /healthz
-    autoDeploy: true
+    autoDeployTrigger: commit
     envVars:
+      - key: PORT
+        value: 10000
       - key: HOST
         value: 0.0.0.0
-      - key: PYTHON_VERSION
-        value: 3.12.8
       - key: DATABASE_URL
         sync: false
       - key: ADMIN_USER
-        sync: false
+        value: admin
       - key: ADMIN_PASSWORD
         sync: false
       - key: COOKIE_ENCRYPTION_KEY
-        sync: false
+        generateValue: true
       - key: CRON_SECRET
-        sync: false
-      - key: BAIDU_TRANSFER_DIR
-        value: /资源数据
-      - key: WPS_APP_ID
-        sync: false
-      - key: WPS_APP_KEY
-        sync: false
-      - key: WPS_ACCESS_TOKEN
-        sync: false
-      - key: TMDB_API_KEY
-        sync: false
-      - key: RESOURCE_API_URL
-        sync: false
-      - key: RESOURCE_API_TOKEN
-        sync: false
+        generateValue: true
+      - key: DEFAULT_INTERVAL_MINUTES
+        value: 60

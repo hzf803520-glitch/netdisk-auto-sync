@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from selenium import webdriver
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.keys import Keys
@@ -92,7 +92,10 @@ class BrowserLoginManager:
         options.add_argument("--lang=zh-CN")
         options.add_argument(f"--window-size={VIEWPORT_WIDTH},{VIEWPORT_HEIGHT}")
         options.add_argument(f"--user-data-dir={profile_path}")
-        options.page_load_strategy = "eager"
+        # Login pages keep long-lived requests open. Waiting for an "eager" or
+        # "complete" load can time out even though the QR/login UI is already
+        # usable, so return as soon as navigation starts.
+        options.page_load_strategy = "none"
         options.add_experimental_option(
             "excludeSwitches", ["enable-automation", "enable-logging"]
         )
@@ -106,10 +109,16 @@ class BrowserLoginManager:
                 else Service()
             )
             driver = webdriver.Chrome(service=service, options=options)
-            driver.set_page_load_timeout(30)
+            driver.set_page_load_timeout(20)
             driver.set_script_timeout(15)
-            driver.get(PROVIDER_LOGIN_URLS[provider])
-            time.sleep(2)
+            try:
+                driver.get(PROVIDER_LOGIN_URLS[provider])
+            except TimeoutException:
+                logger.info("%s login navigation is still loading", provider)
+            time.sleep(3)
+            # Fail during launch, instead of leaving the public page on an
+            # endless black frame, if the renderer cannot produce any image.
+            driver.get_screenshot_as_png()
         except Exception:
             if driver:
                 try:

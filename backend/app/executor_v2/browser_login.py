@@ -19,8 +19,8 @@ from selenium.webdriver.common.keys import Keys
 
 logger = logging.getLogger(__name__)
 
-VIEWPORT_WIDTH = 1024
-VIEWPORT_HEIGHT = 700
+VIEWPORT_WIDTH = 1280
+VIEWPORT_HEIGHT = 720
 
 PROVIDER_LOGIN_URLS = {
     "baidu": "https://pan.baidu.com/",

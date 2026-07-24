@@ -7,5 +7,7 @@ main_block = 'if __name__ == "__main__":\n    main()\n'
 if not source.endswith(main_block):
     raise RuntimeError("主程序分段不完整，未找到启动入口")
 source = source[: -len(main_block)]
-source += "\n" + (base / "helper_fix.py").read_text(encoding="utf-8") + "\n\n" + main_block
+source += "\n" + (base / "helper_fix.py").read_text(encoding="utf-8")
+source += "\n\n" + (base / "incremental_v3.py").read_text(encoding="utf-8")
+source += "\n\n" + main_block
 exec(compile(source, str(base / "app.generated.py"), "exec"), globals())

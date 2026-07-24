@@ -111,7 +111,10 @@ class ResourceScheduler:
                 self._dispatch_due()
             except Exception:
                 logger.exception("executor scheduler dispatch failed")
-            self._wake.wait(timeout=10)
+            # Neon Free suspends after five idle minutes. Polling PostgreSQL
+            # more often would keep compute running and exhaust its CU-hours.
+            # Explicit queue writes still wake this loop immediately.
+            self._wake.wait(timeout=600)
             self._wake.clear()
 
     def _dispatch_due(self) -> None:

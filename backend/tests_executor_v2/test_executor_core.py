@@ -151,14 +151,14 @@ class HelperTests(unittest.TestCase):
             1,
         )
 
-    def test_free_scheduler_can_use_five_minute_interval(self) -> None:
+    def test_free_scheduler_uses_ten_minute_interval(self) -> None:
         with patch.dict(
             os.environ,
-            {"EXECUTOR_CHECK_INTERVAL_MINUTES": "5"},
+            {"EXECUTOR_CHECK_INTERVAL_MINUTES": "10"},
         ):
             settings = normalize_settings({"checkIntervalHours": 3})
-        self.assertEqual(settings["checkIntervalMinutes"], 5)
-        self.assertEqual(settings_interval_seconds(settings), 300)
+        self.assertEqual(settings["checkIntervalMinutes"], 10)
+        self.assertEqual(settings_interval_seconds(settings), 600)
 
     def test_github_oidc_claim_scope(self) -> None:
         auth = GitHubWakeAuth()

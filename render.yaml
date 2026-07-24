@@ -21,7 +21,7 @@ services:
       - key: EXECUTOR_DATA_DIR
         value: /tmp/netdisk-executor
       - key: EXECUTOR_CHECK_INTERVAL_MINUTES
-        value: "5"
+        value: "10"
       - key: GITHUB_WAKE_REPOSITORY
         value: hzf803520-glitch/netdisk-auto-sync
       - key: GITHUB_WAKE_WORKFLOW

@@ -71,12 +71,20 @@ func str(v any) string {
 
 func i64(v any) int64 {
 	switch x := v.(type) {
+	case bool:
+		if x {
+			return 1
+		}
+		return 0
 	case float64:
 		return int64(x)
 	case json.Number:
 		n, _ := x.Int64()
 		return n
 	case string:
+		if strings.EqualFold(strings.TrimSpace(x), "true") {
+			return 1
+		}
 		n, _ := strconv.ParseInt(x, 10, 64)
 		return n
 	default:
@@ -86,6 +94,13 @@ func i64(v any) int64 {
 
 func intv(v any) int {
 	return int(i64(v))
+}
+
+func boolv(v any) bool {
+	if x, ok := v.(bool); ok {
+		return x
+	}
+	return i64(v) != 0
 }
 
 func mapv(v any) map[string]any {

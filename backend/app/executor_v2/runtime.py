@@ -182,7 +182,7 @@ class ExecutorRuntime:
             self.store.update_login_session(
                 session_id,
                 status="error",
-                message=f"官方登录页面打开失败：{exc}",
+                message=_browser_launch_message(exc),
             )
             self.browsers.close(session_id)
 
@@ -228,6 +228,15 @@ class ExecutorRuntime:
 
 _runtime: ExecutorRuntime | None = None
 _runtime_lock = threading.Lock()
+
+
+def _browser_launch_message(exc: Exception) -> str:
+    detail = str(exc).lower()
+    if "chrome not reachable" in detail or "session not created" in detail:
+        return "安全登录浏览器启动失败，请返回管理页重新打开登录窗口"
+    if "timed out" in detail or "timeout" in detail:
+        return "官方网盘登录页面响应超时，请返回管理页重试"
+    return "官方网盘登录页面打开失败，请返回管理页重试"
 
 
 def get_runtime() -> ExecutorRuntime:

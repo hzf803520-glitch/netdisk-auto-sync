@@ -1,0 +1,42 @@
+name: 验证 V2 构建
+
+on:
+  push:
+    branches:
+      - v2-render-neon
+  pull_request:
+    paths:
+      - "v2/**"
+      - "cmd/**"
+      - "Dockerfile"
+      - "go.mod"
+      - "requirements.txt"
+      - "render.yaml"
+      - ".github/workflows/validate-v2.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 安装 Python 依赖
+        run: pip install -r requirements.txt
+      - name: 验证 Python 主程序
+        run: |
+          cat v2/app.py.part* > /tmp/netdisk-app.py
+          python -m py_compile /tmp/netdisk-app.py v2/app.py
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+      - name: 构建网盘执行器
+        run: |
+          go get github.com/wgx0307/netdisk@eb4cd97607558d1c54ed317fdf9aa1b364ea3535
+          go build ./cmd/netdisk-worker
+      - name: 验证 Docker 镜像
+        run: docker build -t netdisk-auto-sync:test .

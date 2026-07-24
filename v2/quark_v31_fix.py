@@ -96,3 +96,53 @@ def _v3_check_one(resource: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
             conn.commit()
         log_event('error', 'check', message, resource_id, traceback.format_exc())
         raise
+
+
+def _v31_read_target_files(resource: dict[str, Any]) -> list[dict[str, Any]]:
+    if resource.get('platform') not in {'quark', 'uc', 'xunlei'}:
+        raise RuntimeError('该平台暂不支持通过文件 ID 查看目标文件夹内容')
+    credentials = get_credentials(resource['platform'])
+    if not credentials:
+        raise RuntimeError(f"尚未绑定{SUPPORTED_PLATFORMS[resource['platform']]['name']}账号")
+    fids = [item for item in str(resource.get('target_fid') or '').split(',') if item]
+    if not fids:
+        raise RuntimeError('尚未完成转存，没有目标文件 ID')
+    last_result: dict[str, Any] = {}
+    for attempt in range(6):
+        last_result = worker_call({
+            'action': 'list_target',
+            'url': resource['source_url'],
+            'fids': fids,
+            'credentials': credentials,
+        }, timeout=90)
+        files = last_result.get('files') or []
+        if files:
+            return files
+        if attempt < 5:
+            time.sleep(2 + attempt)
+    return last_result.get('files') or []
+
+
+_v31_previous_get = Handler.do_GET
+
+
+def _v31_get(self: Handler) -> None:
+    path = urllib.parse.urlsplit(self.path).path
+    match = re.fullmatch(r'/api/resources/(\d+)/target-files', path)
+    if match:
+        if not self.require_auth():
+            return
+        row = _v3_load_resource(int(match.group(1)))
+        if not row:
+            self.send_json({'success': False, 'message': '资源不存在'}, 404)
+            return
+        try:
+            files = _v31_read_target_files(row)
+            self.send_json({'success': True, 'files': files, 'count': len(files), 'target_path': row.get('target_path')})
+        except Exception as exc:
+            self.send_json({'success': False, 'message': str(exc)}, 500)
+        return
+    return _v31_previous_get(self)
+
+
+Handler.do_GET = _v31_get

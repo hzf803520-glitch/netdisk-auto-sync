@@ -22,6 +22,8 @@
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/hzf803520-glitch/netdisk-auto-sync)
 
+新版 Render 服务名为 `netdisk-auto-sync-v2`，用于避开旧版 Python Runtime 服务。新版跑通后，可以在 Render 中停用或删除旧服务。
+
 部署前先在 Neon 创建免费 Postgres 数据库并复制连接字符串。Neon 连接字符串通常包含：
 
 ```text
@@ -54,7 +56,7 @@ Settings → Secrets and variables → Actions → New repository secret
 
 | Secret | 值 |
 |---|---|
-| `RENDER_URL` | Render 完整地址，例如 `https://netdisk-auto-sync.onrender.com` |
+| `RENDER_URL` | 新版 Render 完整地址，例如 `https://netdisk-auto-sync-v2.onrender.com` |
 | `CRON_SECRET` | Render 环境变量中的同名值 |
 | `ADMIN_USER` | `admin`，或你在 Render 设置的账号 |
 | `ADMIN_PASSWORD` | Render 后台密码 |

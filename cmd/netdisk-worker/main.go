@@ -38,16 +38,26 @@ func output(resp Response) {
 func configure(req Request) {
 	creds := req.Credentials
 	cfg := &netdisk.Config{Debug: false}
+	saveDir := strings.TrimSpace(req.SaveDir)
 	switch netdisk.DetectPanType(req.URL) {
 	case netdisk.PanBaidu:
+		if saveDir == "" {
+			saveDir = "/资源数据"
+		}
 		cfg.BaiduCookie = creds["cookie"]
-		cfg.BaiduSaveDir = req.SaveDir
+		cfg.BaiduSaveDir = saveDir
 	case netdisk.PanQuark:
+		if saveDir == "" {
+			saveDir = "0"
+		}
 		cfg.QuarkCookie = creds["cookie"]
-		cfg.QuarkSaveDir = req.SaveDir
+		cfg.QuarkSaveDir = saveDir
 	case netdisk.PanUC:
+		if saveDir == "" {
+			saveDir = "0"
+		}
 		cfg.UCCookie = creds["cookie"]
-		cfg.UCSaveDir = req.SaveDir
+		cfg.UCSaveDir = saveDir
 	case netdisk.PanXunlei:
 		cfg.XunleiRefreshToken = creds["refresh_token"]
 		cfg.XunleiAccessToken = creds["access_token"]
@@ -55,7 +65,7 @@ func configure(req Request) {
 		if cfg.XunleiRefreshToken == "" && cfg.XunleiAccessToken != "" {
 			cfg.XunleiRefreshToken = "access-token-present"
 		}
-		cfg.XunleiSaveDir = req.SaveDir
+		cfg.XunleiSaveDir = saveDir
 	}
 	netdisk.SetConfig(cfg)
 }

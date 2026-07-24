@@ -5,7 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/backend \
     EXECUTOR_DATA_DIR=/tmp/netdisk-executor \
     CHROMIUM_BINARY=/usr/bin/chromium \
-    CHROMEDRIVER_BINARY=/usr/bin/chromedriver
+    CHROMEDRIVER_BINARY=/usr/bin/chromedriver \
+    MALLOC_ARENA_MAX=2
 
 WORKDIR /app
 

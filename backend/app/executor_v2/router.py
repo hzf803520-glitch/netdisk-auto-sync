@@ -458,14 +458,34 @@ LOGIN_PAGE = r"""<!doctype html>
   </section></main>
   <script>
     (() => {
-      const token = decodeURIComponent(location.hash.slice(1));
-      history.replaceState(null, "", location.pathname);
+      const storageKey = "netdiskExecutorLoginToken";
+      let hashToken = "";
+      try{hashToken=decodeURIComponent(location.hash.slice(1))}catch(error){}
+      let token = hashToken;
+      if(hashToken){
+        try{
+          sessionStorage.setItem(storageKey, hashToken);
+          history.replaceState(null, "", location.pathname + location.search);
+        }catch(error){
+          // 保留地址栏片段，让禁用会话存储的浏览器刷新后仍能恢复令牌。
+        }
+      }else{
+        try{token=sessionStorage.getItem(storageKey) || ""}catch(error){}
+      }
       const headers = {"x-login-token": token};
       const screen = document.querySelector("#screen");
       const loading = document.querySelector("#loading");
       const status = document.querySelector("#status");
       let stopped = false, imageUrl = "";
       let browserReady = false, screenFailures = 0;
+      const showTerminalError = (error) => {
+        const message=error instanceof Error ? error.message : "登录窗口操作失败";
+        status.textContent=message;
+        if(/令牌|会话.*(无效|不存在|过期)|已开始新的登录/.test(message)){
+          stopped=true;browserReady=false;loading.style.display="block";
+          loading.textContent=`${message}，请关闭本页并从管理站重新连接`;
+        }
+      };
       const json = async (url, options={}) => {
         const response = await fetch(url, {...options, headers:{...headers,...(options.headers||{})}, cache:"no-store"});
         const data = await response.json().catch(() => ({}));
@@ -492,7 +512,7 @@ LOGIN_PAGE = r"""<!doctype html>
               ?"登录成功，可以关闭此窗口"
               :(data.message || "本次登录未完成，请返回管理页重试");
           }
-        }catch(error){status.textContent=error.message}
+        }catch(error){showTerminalError(error)}
       }
       async function updateScreen(){
         if(stopped || !browserReady)return;
@@ -517,16 +537,21 @@ LOGIN_PAGE = r"""<!doctype html>
         const rect=screen.getBoundingClientRect();
         const x=(event.clientX-rect.left)*screen.naturalWidth/rect.width;
         const y=(event.clientY-rect.top)*screen.naturalHeight/rect.height;
-        await control({action:"click",x,y});setTimeout(updateScreen,250);
+        try{await control({action:"click",x,y});setTimeout(updateScreen,250)}
+        catch(error){showTerminalError(error)}
       });
       document.querySelector("#send").addEventListener("click", async () => {
-        const field=document.querySelector("#text");await control({action:"text",text:field.value});field.value="";setTimeout(updateScreen,250);
+        const field=document.querySelector("#text");
+        try{await control({action:"text",text:field.value});field.value="";setTimeout(updateScreen,250)}
+        catch(error){showTerminalError(error)}
       });
       document.querySelectorAll("[data-key]").forEach(button => button.addEventListener("click", async () => {
-        await control({action:"key",key:button.dataset.key});setTimeout(updateScreen,250);
+        try{await control({action:"key",key:button.dataset.key});setTimeout(updateScreen,250)}
+        catch(error){showTerminalError(error)}
       }));
       document.querySelector("#refresh").addEventListener("click", async () => {
-        await control({action:"refresh"});setTimeout(updateScreen,500);
+        try{await control({action:"refresh"});setTimeout(updateScreen,500)}
+        catch(error){showTerminalError(error)}
       });
       updateStatus().then(updateScreen);
       setInterval(updateStatus,1500);setInterval(updateScreen,2000);

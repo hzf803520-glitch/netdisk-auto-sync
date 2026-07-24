@@ -1,0 +1,46 @@
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/backend \
+    EXECUTOR_DATA_DIR=/var/lib/netdisk-executor \
+    CHROMIUM_BINARY=/usr/bin/chromium \
+    CHROMEDRIVER_BINARY=/usr/bin/chromedriver
+
+WORKDIR /app
+
+LABEL org.opencontainers.image.title="Netdisk Sync Executor v2" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.source="https://github.com/hzf803520-glitch/netdisk-auto-sync/tree/executor-v2"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        chromium \
+        chromium-driver \
+        fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements-executor.txt /app/backend/requirements-executor.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements-executor.txt
+
+COPY LICENSE /app/LICENSE
+COPY backend/app/__init__.py /app/backend/app/__init__.py
+COPY backend/app/executor_v2 /app/backend/app/executor_v2
+COPY backend/app/extensions/__init__.py /app/backend/app/extensions/__init__.py
+COPY backend/app/extensions/adapters/__init__.py /app/backend/app/extensions/adapters/__init__.py
+COPY backend/app/extensions/adapters/base_adapter.py /app/backend/app/extensions/adapters/base_adapter.py
+COPY backend/app/extensions/adapters/baidu_adapter.py /app/backend/app/extensions/adapters/baidu_adapter.py
+COPY backend/app/extensions/adapters/quark_adapter.py /app/backend/app/extensions/adapters/quark_adapter.py
+COPY backend/app/extensions/adapters/uc_adapter.py /app/backend/app/extensions/adapters/uc_adapter.py
+COPY backend/app/extensions/adapters/xunlei_adapter.py /app/backend/app/extensions/adapters/xunlei_adapter.py
+
+RUN mkdir -p /var/lib/netdisk-executor \
+    && useradd --create-home --uid 10001 executor \
+    && chown -R executor:executor /var/lib/netdisk-executor /app
+
+USER executor
+
+EXPOSE 10000
+
+CMD ["sh", "-c", "python -m uvicorn app.executor_v2.app:app --host 0.0.0.0 --port ${PORT:-10000} --proxy-headers --forwarded-allow-ips='*'"]

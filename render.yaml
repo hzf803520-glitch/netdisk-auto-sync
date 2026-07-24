@@ -1,39 +1,26 @@
 services:
   - type: web
-    name: netdisk-auto-sync
-    runtime: python
-    plan: free
+    runtime: docker
+    name: netdisk-sync-executor-v2
+    plan: starter
     region: singapore
-    buildCommand: pip install -r requirements.txt && python -m compileall -q hub
-    startCommand: python hub/pipeline_share_app.py
-    healthCheckPath: /healthz
-    autoDeploy: true
+    dockerfilePath: ./Dockerfile.executor
+    dockerContext: .
+    healthCheckPath: /livez
+    autoDeployTrigger: commit
+    maxShutdownDelaySeconds: 60
     envVars:
-      - key: HOST
-        value: 0.0.0.0
-      - key: PYTHON_VERSION
-        value: 3.12.8
-      - key: DATABASE_URL
-        sync: false
-      - key: ADMIN_USER
-        sync: false
-      - key: ADMIN_PASSWORD
-        sync: false
-      - key: COOKIE_ENCRYPTION_KEY
-        sync: false
-      - key: CRON_SECRET
-        sync: false
-      - key: BAIDU_TRANSFER_DIR
-        value: /资源数据
-      - key: WPS_APP_ID
-        sync: false
-      - key: WPS_APP_KEY
-        sync: false
-      - key: WPS_ACCESS_TOKEN
-        sync: false
-      - key: TMDB_API_KEY
-        sync: false
-      - key: RESOURCE_API_URL
-        sync: false
-      - key: RESOURCE_API_TOKEN
-        sync: false
+      - key: EXECUTOR_TOKEN
+        generateValue: true
+      - key: EXECUTOR_MASTER_KEY
+        generateValue: true
+      - key: EXECUTOR_DATA_DIR
+        value: /var/lib/netdisk-executor
+      - key: EXECUTOR_SOURCE_URL
+        value: https://github.com/hzf803520-glitch/netdisk-auto-sync/tree/executor-v2
+      - key: TZ
+        value: Asia/Shanghai
+    disk:
+      name: executor-data
+      mountPath: /var/lib/netdisk-executor
+      sizeGB: 5

@@ -1,0 +1,15 @@
+.git
+.github
+frontend
+img
+docs
+dl302-master-linux-amd64
+dl302-master-linux-arm64
+default
+Dockerfile
+Dockerfiledev
+backend/tests
+backend/tests_executor_v2
+backend/data
+backend/alembic
+backend/alembic.ini

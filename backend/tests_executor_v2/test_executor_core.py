@@ -13,6 +13,7 @@ from app.executor_v2.browser_login import (
 )
 from app.executor_v2.github_oidc import GitHubWakeAuth
 from app.executor_v2.providers import _episode_info, _minimal_transfer_roots
+from app.executor_v2.runtime import _browser_launch_message
 from app.executor_v2.scheduler import ResourceScheduler
 from app.executor_v2.store import (
     ExecutorStore,
@@ -148,6 +149,13 @@ class HelperTests(unittest.TestCase):
     def test_free_browser_viewport_stays_within_memory_budget(self) -> None:
         self.assertLessEqual(VIEWPORT_WIDTH, 1024)
         self.assertLessEqual(VIEWPORT_HEIGHT, 720)
+
+    def test_browser_launch_error_does_not_expose_stacktrace(self) -> None:
+        message = _browser_launch_message(
+            RuntimeError("session not created from chrome not reachable\nStacktrace")
+        )
+        self.assertNotIn("Stacktrace", message)
+        self.assertIn("启动失败", message)
 
     def test_settings_floor_is_one_hour(self) -> None:
         self.assertEqual(

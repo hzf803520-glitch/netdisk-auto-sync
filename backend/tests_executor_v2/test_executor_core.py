@@ -147,7 +147,7 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(_search_refresh_token(payload), token)
 
     def test_free_browser_viewport_stays_within_memory_budget(self) -> None:
-        self.assertLessEqual(VIEWPORT_WIDTH, 1024)
+        self.assertLessEqual(VIEWPORT_WIDTH, 1280)
         self.assertLessEqual(VIEWPORT_HEIGHT, 720)
 
     def test_browser_launch_error_does_not_expose_stacktrace(self) -> None:

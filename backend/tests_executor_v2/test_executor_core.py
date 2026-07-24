@@ -6,7 +6,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from app.executor_v2.browser_login import _search_refresh_token
+from app.executor_v2.browser_login import (
+    VIEWPORT_HEIGHT,
+    VIEWPORT_WIDTH,
+    _search_refresh_token,
+)
 from app.executor_v2.github_oidc import GitHubWakeAuth
 from app.executor_v2.providers import _episode_info, _minimal_transfer_roots
 from app.executor_v2.scheduler import ResourceScheduler
@@ -140,6 +144,10 @@ class HelperTests(unittest.TestCase):
         token = "r" * 64
         payload = {"auth": '{"tokens":{"refresh_token":"' + token + '"}}'}
         self.assertEqual(_search_refresh_token(payload), token)
+
+    def test_free_browser_viewport_stays_within_memory_budget(self) -> None:
+        self.assertLessEqual(VIEWPORT_WIDTH, 1024)
+        self.assertLessEqual(VIEWPORT_HEIGHT, 720)
 
     def test_settings_floor_is_one_hour(self) -> None:
         self.assertEqual(

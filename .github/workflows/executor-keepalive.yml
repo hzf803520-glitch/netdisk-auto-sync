@@ -3,6 +3,7 @@ name: Netdisk executor keepalive
 on:
   schedule:
     - cron: "3-53/10 * * * *"
+    - cron: "8-58/10 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -20,6 +21,7 @@ jobs:
     steps:
       - name: Request GitHub OIDC token
         id: oidc
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '3-53/10 * * * *'
         run: |
           set -euo pipefail
           response="$(
@@ -32,6 +34,7 @@ jobs:
           printf 'token=%s\n' "${token}" >>"${GITHUB_OUTPUT}"
 
       - name: Keep Render awake and run due jobs
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '3-53/10 * * * *'
         env:
           OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
         run: |
@@ -46,6 +49,17 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"waitSeconds":240}' \
             https://netdisk-sync-executor-v2.onrender.com/v1/maintenance/run
+
+      - name: Keep Render warm without waking Neon
+        if: github.event_name == 'schedule' && github.event.schedule == '8-58/10 * * * *'
+        run: |
+          curl --fail --silent --show-error \
+            --retry 3 \
+            --retry-all-errors \
+            --retry-delay 10 \
+            --connect-timeout 30 \
+            --max-time 90 \
+            https://netdisk-sync-executor-v2.onrender.com/livez
 
       - name: Keep scheduled workflow active
         if: github.event_name == 'schedule'

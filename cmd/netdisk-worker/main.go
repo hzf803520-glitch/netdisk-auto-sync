@@ -87,6 +87,36 @@ func main() {
 			return
 		}
 		output(Response{Success: true, Title: result.Title, ShareURL: result.ShareURL, Code: result.Code, FID: result.FID, TargetDir: target})
+	case "list_target":
+		if len(req.FIDs) == 0 {
+			output(Response{Success: false, Error: "目标文件ID为空"})
+			return
+		}
+		if _, err := configure(Request{URL: req.URL, Credentials: req.Credentials, SaveDir: "/"}); err != nil {
+			output(Response{Success: false, Error: err.Error()})
+			return
+		}
+		panType := netdisk.DetectPanType(req.URL)
+		if panType < 0 {
+			output(Response{Success: false, Error: "无法识别网盘平台"})
+			return
+		}
+		files := make([]FileEntry, 0)
+		for _, fid := range req.FIDs {
+			fid = strings.TrimSpace(fid)
+			if fid == "" {
+				continue
+			}
+			items, err := netdisk.GetFiles(panType, fid)
+			if err != nil {
+				output(Response{Success: false, Error: err.Error()})
+				return
+			}
+			for _, item := range items {
+				files = append(files, FileEntry{ID: item.FID, Name: item.FileName, Path: item.FileName, Size: item.Size, IsDir: item.IsDir, UpdatedAt: item.UpdatedAt})
+			}
+		}
+		output(Response{Success: true, Files: files, Fingerprint: fingerprint(files)})
 	case "verify":
 		if _, err := configure(req); err != nil {
 			output(Response{Success: false, Error: err.Error()})

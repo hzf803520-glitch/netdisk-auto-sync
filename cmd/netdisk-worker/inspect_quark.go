@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -49,8 +50,13 @@ func inspectQuark(req Request, uc bool) (string, []FileEntry, error) {
 		return "", nil, fmt.Errorf("分享令牌为空")
 	}
 	files := make([]FileEntry, 0)
+	visited := map[string]bool{}
 	var walk func(parentID, parentPath string) error
 	walk = func(parentID, parentPath string) error {
+		if visited[parentID] {
+			return nil
+		}
+		visited[parentID] = true
 		for pageNo := 1; pageNo <= 30; pageNo++ {
 			q := url.Values{}
 			q.Set("pr", pr)
@@ -73,7 +79,7 @@ func inspectQuark(req Request, uc bool) (string, []FileEntry, error) {
 				return fmt.Errorf("读取分享文件失败: %s", str(resp["message"]))
 			}
 			body := mapv(resp["data"])
-			if title == "" {
+			if strings.TrimSpace(title) == "" {
 				title = str(jsonPath(body, "share", "title"))
 			}
 			items := listv(body["list"])
@@ -91,7 +97,7 @@ func inspectQuark(req Request, uc bool) (string, []FileEntry, error) {
 				if parentPath != "" {
 					p = parentPath + "/" + name
 				}
-				isDir := intv(m["type"]) == 1 || intv(m["dir"]) == 1
+				isDir := intv(m["type"]) == 1 || boolv(m["dir"]) || intv(m["file_type"]) == 0 && boolv(m["is_dir"])
 				files = append(files, FileEntry{ID: fid, Name: name, Path: p, Size: i64(m["size"]), IsDir: isDir, UpdatedAt: str(m["updated_at"])})
 				if isDir && len(files) < 5000 {
 					if err := walk(fid, p); err != nil {
@@ -110,5 +116,18 @@ func inspectQuark(req Request, uc bool) (string, []FileEntry, error) {
 	if err := walk("0", ""); err != nil {
 		return "", nil, err
 	}
-	return title, files, nil
+	if strings.TrimSpace(title) == "" {
+		rootDirs := make([]FileEntry, 0)
+		for _, item := range files {
+			if item.IsDir && !strings.Contains(strings.Trim(item.Path, "/"), "/") {
+				rootDirs = append(rootDirs, item)
+			}
+		}
+		if len(rootDirs) == 1 {
+			title = rootDirs[0].Name
+		} else if len(files) == 1 {
+			title = files[0].Name
+		}
+	}
+	return strings.TrimSpace(title), files, nil
 }

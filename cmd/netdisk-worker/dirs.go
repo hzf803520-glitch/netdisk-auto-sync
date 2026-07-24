@@ -10,6 +10,26 @@ import (
 	netdisk "github.com/wgx0307/netdisk"
 )
 
+func cloudItemIsDir(item map[string]any) bool {
+	return intv(item["type"]) == 1 || boolv(item["dir"]) || boolv(item["is_dir"]) || str(item["kind"]) == "drive#folder"
+}
+
+func cloudCreatedFID(resp map[string]any) string {
+	paths := [][]string{
+		{"data", "fid"},
+		{"data", "file", "fid"},
+		{"data", "file_info", "fid"},
+		{"file", "fid"},
+		{"fid"},
+	}
+	for _, path := range paths {
+		if fid := str(jsonPath(resp, path...)); fid != "" {
+			return fid
+		}
+	}
+	return ""
+}
+
 func listCloudDir(client *http.Client, base, pr, cookie, parent string) ([]map[string]any, error) {
 	headers := commonHeaders(cookie, "https://pan.quark.cn/")
 	if pr == "UCBrowser" {
@@ -20,6 +40,9 @@ func listCloudDir(client *http.Client, base, pr, cookie, parent string) ([]map[s
 	if err != nil {
 		return nil, err
 	}
+	if status := intv(resp["status"]); status != 0 && status != 200 {
+		return nil, fmt.Errorf("读取目标目录失败: %s", str(resp["message"]))
+	}
 	data := mapv(resp["data"])
 	out := make([]map[string]any, 0)
 	for _, raw := range listv(data["list"]) {
@@ -28,6 +51,19 @@ func listCloudDir(client *http.Client, base, pr, cookie, parent string) ([]map[s
 		}
 	}
 	return out, nil
+}
+
+func findCloudChild(client *http.Client, base, pr, cookie, parent, name string) (string, error) {
+	items, err := listCloudDir(client, base, pr, cookie, parent)
+	if err != nil {
+		return "", err
+	}
+	for _, item := range items {
+		if str(item["file_name"]) == name && cloudItemIsDir(item) {
+			return str(item["fid"]), nil
+		}
+	}
+	return "", nil
 }
 
 func resolveQuarkDir(req Request, uc bool, target string) (string, error) {
@@ -42,22 +78,43 @@ func resolveQuarkDir(req Request, uc bool, target string) (string, error) {
 	client := &http.Client{Timeout: 35 * time.Second}
 	headers := commonHeaders(req.Credentials["cookie"], referer)
 	q := url.Values{"pr": {pr}, "fr": {"pc"}}
-	_, _ = doJSON(client, http.MethodPost, base+"/1/clouddrive/file?"+q.Encode(), headers, map[string]any{"pdir_fid": "0", "file_name": "", "dir_path": target, "dir_init_lock": false})
+
+	// 夸克/UC 支持一次传入完整 dir_path。优先使用响应中的目录 ID，
+	// 避免刚创建目录后文件列表接口尚未刷新导致“创建后未找到”。
+	created, createErr := doJSON(client, http.MethodPost, base+"/1/clouddrive/file?"+q.Encode(), headers, map[string]any{"pdir_fid": "0", "file_name": "", "dir_path": target, "dir_init_lock": false})
+	if createErr == nil {
+		if fid := cloudCreatedFID(created); fid != "" {
+			return fid, nil
+		}
+	}
+
 	parent := "0"
 	for _, seg := range strings.Split(strings.Trim(target, "/"), "/") {
-		items, err := listCloudDir(client, base, pr, req.Credentials["cookie"], parent)
+		found, err := findCloudChild(client, base, pr, req.Credentials["cookie"], parent, seg)
 		if err != nil {
 			return "", err
 		}
-		found := ""
-		for _, item := range items {
-			if str(item["file_name"]) == seg && (intv(item["type"]) == 1 || intv(item["dir"]) == 1) {
-				found = str(item["fid"])
-				break
+		if found == "" {
+			resp, err := doJSON(client, http.MethodPost, base+"/1/clouddrive/file?"+q.Encode(), headers, map[string]any{"pdir_fid": parent, "file_name": seg, "dir_path": "", "dir_init_lock": false})
+			if err == nil {
+				found = cloudCreatedFID(resp)
 			}
 		}
 		if found == "" {
-			return "", fmt.Errorf("目标目录创建后未找到: %s", target)
+			// 网盘目录列表存在短暂最终一致性，最多等待约 8 秒。
+			for retry := 0; retry < 10 && found == ""; retry++ {
+				time.Sleep(time.Duration(400+retry*100) * time.Millisecond)
+				found, err = findCloudChild(client, base, pr, req.Credentials["cookie"], parent, seg)
+				if err != nil {
+					return "", err
+				}
+			}
+		}
+		if found == "" {
+			if createErr != nil {
+				return "", fmt.Errorf("目标目录创建失败: %s（%v）", target, createErr)
+			}
+			return "", fmt.Errorf("目标目录创建后未找到: %s/%s", strings.TrimRight(target, "/"), seg)
 		}
 		parent = found
 	}

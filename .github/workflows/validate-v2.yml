@@ -37,10 +37,12 @@ jobs:
           main_block = 'if __name__ == "__main__":\n    main()\n'
           assert source.endswith(main_block), "主程序分段不完整"
           source = source[:-len(main_block)]
-          source += "\n" + (base / "helper_fix.py").read_text(encoding="utf-8") + "\n\n" + main_block
+          for overlay in ("helper_fix.py", "incremental_v3.py", "quark_v31_fix.py"):
+              source += "\n\n" + (base / overlay).read_text(encoding="utf-8")
+          source += "\n\n" + main_block
           Path("/tmp/netdisk-app.py").write_text(source, encoding="utf-8")
           PY
-          python -m py_compile /tmp/netdisk-app.py v2/app.py v2/helper_fix.py
+          python -m py_compile /tmp/netdisk-app.py v2/app.py v2/helper_fix.py v2/incremental_v3.py v2/quark_v31_fix.py
       - name: 验证文档解析
         env:
           DATABASE_URL: postgresql://example.invalid/db
@@ -50,7 +52,7 @@ jobs:
         run: |
           python - <<'PY'
           import importlib.util
-          spec = importlib.util.spec_from_file_location("netdisk_app", "/tmp/netdisk-app.py")
+          spec = importlib.util.spec_from_file_location("netdisk_app", "v2/app.py")
           module = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(module)
           records = module.parse_text_records(
@@ -62,6 +64,11 @@ jobs:
           assert len(records) == 3, records
           assert records[0]["title"].startswith("千香"), records
           assert records[1]["source_code"] == "8888", records
+          assert module._v31_is_placeholder("未命名资源")
+          assert module._v31_root_name([
+              {"name": "夸克精选壁纸", "path": "夸克精选壁纸", "is_dir": True},
+              {"name": "a.jpg", "path": "夸克精选壁纸/a.jpg", "is_dir": False},
+          ]) == "夸克精选壁纸"
           PY
       - name: 验证登录助手脚本
         env:
@@ -72,7 +79,7 @@ jobs:
         run: |
           python - <<'PY'
           import importlib.util
-          spec = importlib.util.spec_from_file_location("netdisk_app", "/tmp/netdisk-app.py")
+          spec = importlib.util.spec_from_file_location("netdisk_app", "v2/app.py")
           module = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(module)
           helper = module.helper_python("quark", "PAIRCODE", "https://example.com")
@@ -82,9 +89,25 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
-      - name: 构建网盘执行器
+      - name: 构建并测试网盘执行器
         run: |
           go get github.com/wgx0307/netdisk@eb4cd97607558d1c54ed317fdf9aa1b364ea3535
-          go build ./cmd/netdisk-worker
+          go test ./cmd/netdisk-worker
+          go build -o /tmp/netdisk-worker ./cmd/netdisk-worker
+      - name: 真实夸克分享递归检查
+        if: github.event_name == 'pull_request' && github.head_ref == 'fix-quark-title-recursive-dir'
+        run: |
+          printf '%s\n' '{"action":"inspect","url":"https://pan.quark.cn/s/52e2af262bf6","code":"","credentials":{"cookie":""}}' | /tmp/netdisk-worker > /tmp/quark-inspect.json
+          cat /tmp/quark-inspect.json
+          python - <<'PY'
+          import json
+          data = json.load(open('/tmp/quark-inspect.json', encoding='utf-8'))
+          assert data.get('success'), data
+          assert data.get('title') and data['title'] != '未命名资源', data
+          files = data.get('files') or []
+          assert len(files) > 1, data
+          assert any('/' in str(item.get('path') or '') for item in files), files[:20]
+          print('真实分享验证通过：', data['title'], '共', len(files), '项')
+          PY
       - name: 验证 Docker 镜像
         run: docker build -t netdisk-auto-sync:test .

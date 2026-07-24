@@ -13,24 +13,28 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     env:
       RENDER_URL: ${{ secrets.RENDER_URL }}
       ADMIN_USER: ${{ secrets.ADMIN_USER }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
     steps:
-      - name: 请求线上页面
+      - name: 等待并诊断线上页面
         run: |
           set -e
           test -n "$RENDER_URL" || (echo "缺少 RENDER_URL" && exit 1)
           test -n "$ADMIN_PASSWORD" || (echo "缺少 ADMIN_PASSWORD" && exit 1)
           [ -n "$ADMIN_USER" ] || ADMIN_USER=admin
           base="${RENDER_URL%/}"
-          code=$(curl -sS --max-time 60 -u "$ADMIN_USER:$ADMIN_PASSWORD" -w '%{http_code}' "$base/" -o /tmp/home.html || true)
-          echo "HTTP_STATUS=$code"
-          echo -n "PAGE_TITLE="
-          grep -oE '<title>[^<]+' /tmp/home.html | head -1 | sed 's/<title>//' || true
-          echo -n "HAS_V3="; if grep -q 'V3' /tmp/home.html; then echo yes; else echo no; fi
-          echo -n "HAS_V31="; if grep -q 'V3.1' /tmp/home.html; then echo yes; else echo no; fi
-          echo -n "BODY_PREFIX="; head -c 180 /tmp/home.html | tr '\n' ' '; echo
-          test "$code" = "200" || exit 2
+          for i in $(seq 1 72); do
+            code=$(curl -sS --max-time 60 -u "$ADMIN_USER:$ADMIN_PASSWORD" -w '%{http_code}' "$base/" -o /tmp/home.html || true)
+            title=$(grep -oE '<title>[^<]+' /tmp/home.html 2>/dev/null | head -1 | sed 's/<title>//' || true)
+            echo "第 $i 次：HTTP=$code TITLE=$title"
+            if [ "$code" = "200" ] && grep -q 'V3.1' /tmp/home.html; then
+              echo "V3.1 已上线"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "最终线上页面仍不是 V3.1"
+          exit 1

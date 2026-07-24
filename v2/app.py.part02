@@ -1,0 +1,220 @@
+        )
+        conn.commit()
+
+    try:
+        result = worker_call(
+            {
+                "action": "transfer",
+                "url": resource["source_url"],
+                "code": resource["source_code"],
+                "share_pwd": "",
+                "expired_type": 1,
+                "save_dir": resource["save_dir"],
+                "credentials": credentials,
+            }
+        )
+        old_fid = str(resource.get("target_fid") or "")
+        new_fid = str(result.get("fid") or "")
+        cleanup_message = ""
+        if old_fid and old_fid != new_fid:
+            try:
+                worker_call(
+                    {
+                        "action": "delete",
+                        "url": resource["source_url"],
+                        "fids": [x for x in old_fid.split(",") if x],
+                        "save_dir": resource["save_dir"],
+                        "credentials": credentials,
+                    },
+                    timeout=90,
+                )
+                cleanup_message = "；旧副本已清理"
+            except Exception as cleanup_exc:
+                cleanup_message = f"；旧副本清理失败：{cleanup_exc}"
+        message = f"转存成功并生成新分享链接{cleanup_message}"
+        with connect_db() as conn:
+            conn.execute(
+                """
+                UPDATE resources SET
+                    target_url=%s,target_code=%s,target_fid=%s,status='success',last_message=%s,
+                    last_run=NOW(),next_run=NOW()+(interval_minutes||' minutes')::interval,updated_at=NOW()
+                WHERE id=%s
+                """,
+                (
+                    str(result.get("share_url") or ""),
+                    str(result.get("code") or ""),
+                    new_fid,
+                    message,
+                    resource_id,
+                ),
+            )
+            conn.commit()
+        log_event("success", "sync", message, resource_id, json.dumps(result, ensure_ascii=False))
+        return True
+    except Exception as exc:
+        message = str(exc)
+        with connect_db() as conn:
+            conn.execute(
+                """
+                UPDATE resources SET status='failed',last_message=%s,last_run=NOW(),
+                    next_run=NOW()+(interval_minutes||' minutes')::interval,updated_at=NOW()
+                WHERE id=%s
+                """,
+                (message[:1000], resource_id),
+            )
+            conn.commit()
+        log_event("error", "sync", message, resource_id, traceback.format_exc())
+        return False
+
+
+def set_job_state(**kwargs: Any) -> None:
+    with JOB_STATE_LOCK:
+        JOB_STATE.update(kwargs)
+
+
+def get_job_state() -> dict[str, Any]:
+    with JOB_STATE_LOCK:
+        return dict(JOB_STATE)
+
+
+def run_sync_job(trigger: str, resource_id: int | None = None, due_only: bool = False) -> None:
+    if not SYNC_LOCK.acquire(blocking=False):
+        return
+    try:
+        clauses = ["enabled=TRUE"]
+        params: list[Any] = []
+        if resource_id is not None:
+            clauses.append("id=%s")
+            params.append(resource_id)
+        elif due_only:
+            clauses.append("(next_run IS NULL OR next_run<=NOW())")
+        with connect_db() as conn:
+            rows = conn.execute(
+                "SELECT * FROM resources WHERE " + " AND ".join(clauses) + " ORDER BY id",
+                params,
+            ).fetchall()
+        set_job_state(
+            running=True,
+            message="正在执行转存任务",
+            started_at=iso(now_utc()),
+            finished_at=None,
+            trigger=trigger,
+            total=len(rows),
+            done=0,
+            success=0,
+            failed=0,
+        )
+        success_count = 0
+        failed_count = 0
+        for index, row in enumerate(rows, 1):
+            ok = sync_one(row)
+            success_count += int(ok)
+            failed_count += int(not ok)
+            set_job_state(done=index, success=success_count, failed=failed_count)
+        set_job_state(
+            running=False,
+            message=f"任务完成：成功 {success_count}，失败 {failed_count}",
+            finished_at=iso(now_utc()),
+        )
+    except Exception as exc:
+        set_job_state(running=False, message=f"任务异常：{exc}", finished_at=iso(now_utc()))
+        log_event("error", "job", str(exc), details=traceback.format_exc())
+    finally:
+        SYNC_LOCK.release()
+
+
+def start_sync_job(trigger: str, resource_id: int | None = None, due_only: bool = False) -> bool:
+    if get_job_state().get("running") or SYNC_LOCK.locked():
+        return False
+    thread = threading.Thread(
+        target=run_sync_job,
+        args=(trigger, resource_id, due_only),
+        daemon=True,
+        name="netdisk-sync",
+    )
+    thread.start()
+    return True
+
+
+def hash_pair_code(code: str) -> str:
+    return hmac.new(COOKIE_ENCRYPTION_KEY.encode(), code.encode(), hashlib.sha256).hexdigest()
+
+
+def create_pair(platform: str) -> tuple[str, datetime]:
+    if platform not in SUPPORTED_PLATFORMS:
+        raise ValueError("不支持的平台")
+    code = "".join(secrets.choice("23456789ABCDEFGHJKLMNPQRSTUVWXYZ") for _ in range(10))
+    expires = now_utc() + timedelta(minutes=30)
+    with connect_db() as conn:
+        conn.execute("DELETE FROM pair_tokens WHERE expires_at<NOW() OR used_at IS NOT NULL")
+        conn.execute(
+            "INSERT INTO pair_tokens(code_hash,platform,expires_at) VALUES(%s,%s,%s)",
+            (hash_pair_code(code), platform, expires),
+        )
+        conn.commit()
+    return code, expires
+
+
+def consume_pair(code: str, platform: str) -> None:
+    code_hash = hash_pair_code(code)
+    with connect_db() as conn:
+        row = conn.execute(
+            "SELECT platform,expires_at,used_at FROM pair_tokens WHERE code_hash=%s FOR UPDATE",
+            (code_hash,),
+        ).fetchone()
+        if not row or row["platform"] != platform:
+            raise ValueError("配对码无效")
+        if row["used_at"] or row["expires_at"] < now_utc():
+            raise ValueError("配对码已使用或已过期")
+        conn.execute("UPDATE pair_tokens SET used_at=NOW() WHERE code_hash=%s", (code_hash,))
+        conn.commit()
+
+
+def helper_python(platform: str, code: str, base_url: str) -> str:
+    login_url = SUPPORTED_PLATFORMS[platform]["login"]
+    return f'''#!/usr/bin/env python3
+import json
+import sys
+import urllib.request
+from playwright.sync_api import sync_playwright
+
+BACKEND = {base_url!r}
+PAIR_CODE = {code!r}
+PLATFORM = {platform!r}
+LOGIN_URL = {login_url!r}
+
+
+def find_tokens(value, found):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            low = str(key).lower()
+            if "refresh" in low and "token" in low and isinstance(item, str):
+                found.setdefault("refresh_token", item)
+            if "access" in low and "token" in low and isinstance(item, str):
+                found.setdefault("access_token", item)
+            find_tokens(item, found)
+    elif isinstance(value, list):
+        for item in value:
+            find_tokens(item, found)
+    elif isinstance(value, str) and value[:1] in "[{{":
+        try:
+            find_tokens(json.loads(value), found)
+        except Exception:
+            pass
+
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=False)
+    context = browser.new_context(viewport={{"width": 1280, "height": 800}})
+    page = context.new_page()
+    page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=120000)
+    print("\n请在打开的浏览器中完成登录。登录成功后，回到这个终端窗口按回车。\n")
+    input()
+    cookies = context.cookies()
+    cookie_text = "; ".join(f"{{c['name']}}={{c['value']}}" for c in cookies)
+    payload = {{"cookie": cookie_text}}
+    if PLATFORM == "xunlei":
+        found = {{}}
+        for pg in context.pages:
+            try:
+                values = pg.evaluate("Object.fromEntries(Object.entries(localStorage))")

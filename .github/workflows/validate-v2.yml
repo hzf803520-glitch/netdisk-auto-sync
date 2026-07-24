@@ -52,7 +52,7 @@ jobs:
         run: |
           python - <<'PY'
           import importlib.util
-          spec = importlib.util.spec_from_file_location("netdisk_app", "/tmp/netdisk-app.py")
+          spec = importlib.util.spec_from_file_location("netdisk_app", "v2/app.py")
           module = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(module)
           records = module.parse_text_records(
@@ -79,7 +79,7 @@ jobs:
         run: |
           python - <<'PY'
           import importlib.util
-          spec = importlib.util.spec_from_file_location("netdisk_app", "/tmp/netdisk-app.py")
+          spec = importlib.util.spec_from_file_location("netdisk_app", "v2/app.py")
           module = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(module)
           helper = module.helper_python("quark", "PAIRCODE", "https://example.com")

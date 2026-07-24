@@ -21,53 +21,30 @@ type Request struct {
 	FIDs        []string          `json:"fids"`
 }
 
+type FileEntry struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Size      int64  `json:"size"`
+	IsDir     bool   `json:"is_dir"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 type Response struct {
-	Success  bool   `json:"success"`
-	Error    string `json:"error,omitempty"`
-	Title    string `json:"title,omitempty"`
-	ShareURL string `json:"share_url,omitempty"`
-	Code     string `json:"code,omitempty"`
-	FID      string `json:"fid,omitempty"`
+	Success     bool        `json:"success"`
+	Error       string      `json:"error,omitempty"`
+	Title       string      `json:"title,omitempty"`
+	ShareURL    string      `json:"share_url,omitempty"`
+	Code        string      `json:"code,omitempty"`
+	FID         string      `json:"fid,omitempty"`
+	Files       []FileEntry `json:"files,omitempty"`
+	Fingerprint string      `json:"fingerprint,omitempty"`
+	TargetDir   string      `json:"target_dir,omitempty"`
 }
 
 func output(resp Response) {
 	data, _ := json.Marshal(resp)
 	fmt.Println(string(data))
-}
-
-func configure(req Request) {
-	creds := req.Credentials
-	cfg := &netdisk.Config{Debug: false}
-	saveDir := strings.TrimSpace(req.SaveDir)
-	switch netdisk.DetectPanType(req.URL) {
-	case netdisk.PanBaidu:
-		if saveDir == "" {
-			saveDir = "/资源数据"
-		}
-		cfg.BaiduCookie = creds["cookie"]
-		cfg.BaiduSaveDir = saveDir
-	case netdisk.PanQuark:
-		if saveDir == "" {
-			saveDir = "0"
-		}
-		cfg.QuarkCookie = creds["cookie"]
-		cfg.QuarkSaveDir = saveDir
-	case netdisk.PanUC:
-		if saveDir == "" {
-			saveDir = "0"
-		}
-		cfg.UCCookie = creds["cookie"]
-		cfg.UCSaveDir = saveDir
-	case netdisk.PanXunlei:
-		cfg.XunleiRefreshToken = creds["refresh_token"]
-		cfg.XunleiAccessToken = creds["access_token"]
-		// SDK 的配置检查要求 RefreshToken 非空；已有 AccessToken 时用占位值通过检查，实际请求仍优先使用 AccessToken。
-		if cfg.XunleiRefreshToken == "" && cfg.XunleiAccessToken != "" {
-			cfg.XunleiRefreshToken = "access-token-present"
-		}
-		cfg.XunleiSaveDir = saveDir
-	}
-	netdisk.SetConfig(cfg)
 }
 
 func main() {
@@ -82,10 +59,25 @@ func main() {
 		output(Response{Success: false, Error: "分享链接为空"})
 		return
 	}
-	configure(req)
 
 	switch strings.ToLower(req.Action) {
+	case "inspect":
+		if _, err := configure(Request{URL: req.URL, Credentials: req.Credentials, SaveDir: "/"}); err != nil && netdisk.DetectPanType(req.URL) != netdisk.PanBaidu {
+			cfg := &netdisk.Config{Debug: false, BaiduCookie: req.Credentials["cookie"], QuarkCookie: req.Credentials["cookie"], UCCookie: req.Credentials["cookie"], XunleiRefreshToken: req.Credentials["refresh_token"], XunleiAccessToken: req.Credentials["access_token"]}
+			netdisk.SetConfig(cfg)
+		}
+		title, files, err := inspect(req)
+		if err != nil {
+			output(Response{Success: false, Error: err.Error()})
+			return
+		}
+		output(Response{Success: true, Title: title, Files: files, Fingerprint: fingerprint(files)})
 	case "transfer":
+		target, err := configure(req)
+		if err != nil {
+			output(Response{Success: false, Error: err.Error()})
+			return
+		}
 		if req.ExpiredType == 0 {
 			req.ExpiredType = 1
 		}
@@ -94,14 +86,12 @@ func main() {
 			output(Response{Success: false, Error: err.Error()})
 			return
 		}
-		output(Response{
-			Success:  true,
-			Title:    result.Title,
-			ShareURL: result.ShareURL,
-			Code:     result.Code,
-			FID:      result.FID,
-		})
+		output(Response{Success: true, Title: result.Title, ShareURL: result.ShareURL, Code: result.Code, FID: result.FID, TargetDir: target})
 	case "verify":
+		if _, err := configure(req); err != nil {
+			output(Response{Success: false, Error: err.Error()})
+			return
+		}
 		result, err := netdisk.Verify(req.URL, req.Code)
 		if err != nil {
 			output(Response{Success: false, Error: err.Error()})
@@ -111,6 +101,10 @@ func main() {
 	case "delete":
 		if len(req.FIDs) == 0 {
 			output(Response{Success: true})
+			return
+		}
+		if _, err := configure(req); err != nil {
+			output(Response{Success: false, Error: err.Error()})
 			return
 		}
 		panType := netdisk.DetectPanType(req.URL)

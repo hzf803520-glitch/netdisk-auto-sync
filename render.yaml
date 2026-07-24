@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: netdisk-auto-sync
+    name: netdisk-auto-sync-v2
     runtime: docker
     plan: free
     region: singapore

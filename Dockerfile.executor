@@ -3,7 +3,7 @@ FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/backend \
-    EXECUTOR_DATA_DIR=/var/lib/netdisk-executor \
+    EXECUTOR_DATA_DIR=/tmp/netdisk-executor \
     CHROMIUM_BINARY=/usr/bin/chromium \
     CHROMEDRIVER_BINARY=/usr/bin/chromedriver
 
@@ -35,9 +35,9 @@ COPY backend/app/extensions/adapters/quark_adapter.py /app/backend/app/extension
 COPY backend/app/extensions/adapters/uc_adapter.py /app/backend/app/extensions/adapters/uc_adapter.py
 COPY backend/app/extensions/adapters/xunlei_adapter.py /app/backend/app/extensions/adapters/xunlei_adapter.py
 
-RUN mkdir -p /var/lib/netdisk-executor \
+RUN mkdir -p /tmp/netdisk-executor \
     && useradd --create-home --uid 10001 executor \
-    && chown -R executor:executor /var/lib/netdisk-executor /app
+    && chown -R executor:executor /tmp/netdisk-executor /app
 
 USER executor
 

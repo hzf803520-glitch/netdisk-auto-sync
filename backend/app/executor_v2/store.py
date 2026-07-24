@@ -14,6 +14,13 @@ from typing import Any, Iterable
 
 from cryptography.fernet import Fernet, InvalidToken
 
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+except ImportError:  # pragma: no cover - SQLite-only local development
+    psycopg = None
+    dict_row = None
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -49,44 +56,80 @@ class SecretBox:
         return value if isinstance(value, dict) else {}
 
 
+class DatabaseConnection:
+    """Small DB-API compatibility wrapper for SQLite and PostgreSQL."""
+
+    def __init__(self, raw: Any, backend: str) -> None:
+        self.raw = raw
+        self.backend = backend
+
+    def execute(self, sql: str, params: Iterable[Any] = ()):
+        if self.backend == "postgresql":
+            sql = sql.replace(
+                "MIN(resources.next_run_at, excluded.next_run_at)",
+                "LEAST(resources.next_run_at, excluded.next_run_at)",
+            )
+            sql = sql.replace("?", "%s")
+        return self.raw.execute(sql, tuple(params))
+
+
 class ExecutorStore:
     def __init__(self) -> None:
-        data_dir = Path(os.getenv("EXECUTOR_DATA_DIR", "/app/backend/data/executor-v2"))
+        data_dir = Path(os.getenv("EXECUTOR_DATA_DIR", "/tmp/netdisk-executor"))
         data_dir.mkdir(parents=True, exist_ok=True)
         self.path = data_dir / "executor-v2.sqlite3"
         self.profile_dir = data_dir / "browser-profiles"
         self.profile_dir.mkdir(parents=True, exist_ok=True)
+        self.database_url = os.getenv("DATABASE_URL", "").strip()
+        self.backend = "postgresql" if self.database_url else "sqlite"
+        require_postgres = os.getenv("EXECUTOR_REQUIRE_POSTGRES", "").strip().lower()
+        if require_postgres in {"1", "true", "yes"} and not self.database_url:
+            raise RuntimeError(
+                "DATABASE_URL is required for this deployment; "
+                "connect a Neon PostgreSQL database"
+            )
+        if self.backend == "postgresql" and psycopg is None:
+            raise RuntimeError("DATABASE_URL is set but psycopg is not installed")
         self._lock = threading.RLock()
         self.secrets = SecretBox()
         self._initialize()
 
     @contextmanager
     def connection(self):
-        connection = sqlite3.connect(
-            self.path,
-            timeout=30,
-            isolation_level=None,
-            check_same_thread=False,
-        )
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA busy_timeout = 30000")
+        if self.backend == "postgresql":
+            connection = psycopg.connect(
+                self.database_url,
+                autocommit=True,
+                connect_timeout=30,
+                row_factory=dict_row,
+            )
+        else:
+            connection = sqlite3.connect(
+                self.path,
+                timeout=30,
+                isolation_level=None,
+                check_same_thread=False,
+            )
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA busy_timeout = 30000")
         try:
-            yield connection
+            yield DatabaseConnection(connection, self.backend)
         finally:
             connection.close()
 
     def _initialize(self) -> None:
         with self._lock, self.connection() as db:
-            db.executescript(
+            if self.backend == "sqlite":
+                db.execute("PRAGMA journal_mode = WAL")
+            statements = (
                 """
-                PRAGMA journal_mode = WAL;
-
                 CREATE TABLE IF NOT EXISTS executor_meta (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
-                );
-
+                )
+                """,
+                """
                 CREATE TABLE IF NOT EXISTS accounts (
                     provider TEXT PRIMARY KEY,
                     state TEXT NOT NULL DEFAULT 'login-required',
@@ -95,8 +138,9 @@ class ExecutorStore:
                     last_verified_at TEXT,
                     message TEXT NOT NULL DEFAULT '',
                     updated_at TEXT NOT NULL
-                );
-
+                )
+                """,
+                """
                 CREATE TABLE IF NOT EXISTS login_sessions (
                     session_id TEXT PRIMARY KEY,
                     public_token TEXT UNIQUE NOT NULL,
@@ -107,8 +151,9 @@ class ExecutorStore:
                     metadata_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
-                );
-
+                )
+                """,
+                """
                 CREATE TABLE IF NOT EXISTS resources (
                     resource_key TEXT PRIMARY KEY,
                     provider TEXT NOT NULL,
@@ -133,21 +178,31 @@ class ExecutorStore:
                     message TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_resources_due
-                ON resources(monitor_enabled, next_run_at);
+                )
+                """,
                 """
+                CREATE INDEX IF NOT EXISTS idx_resources_due
+                ON resources(monitor_enabled, next_run_at)
+                """,
             )
-            resource_columns = {
-                str(row["name"])
-                for row in db.execute("PRAGMA table_info(resources)").fetchall()
-            }
-            if "pending_action" not in resource_columns:
+            for statement in statements:
+                db.execute(statement)
+            if self.backend == "postgresql":
                 db.execute(
                     "ALTER TABLE resources "
-                    "ADD COLUMN pending_action TEXT NOT NULL DEFAULT ''"
+                    "ADD COLUMN IF NOT EXISTS "
+                    "pending_action TEXT NOT NULL DEFAULT ''"
                 )
+            else:
+                resource_columns = {
+                    str(row["name"])
+                    for row in db.execute("PRAGMA table_info(resources)").fetchall()
+                }
+                if "pending_action" not in resource_columns:
+                    db.execute(
+                        "ALTER TABLE resources "
+                        "ADD COLUMN pending_action TEXT NOT NULL DEFAULT ''"
+                    )
             instance = db.execute(
                 "SELECT value FROM executor_meta WHERE key = 'instance_id'"
             ).fetchone()
@@ -319,7 +374,7 @@ class ExecutorStore:
                     updated_at = ?
                 WHERE provider = ?
                 """,
-                (state, message[:500], 1 if verified else 0, now, now, provider),
+                (state, message[:500], bool(verified), now, now, provider),
             )
 
     def create_login_session(
@@ -481,7 +536,7 @@ class ExecutorStore:
         self,
         resources: Iterable[dict[str, Any]],
         *,
-        interval_hours: int,
+        interval_seconds: int,
     ) -> tuple[int, int]:
         accepted = 0
         rejected = 0
@@ -513,7 +568,9 @@ class ExecutorStore:
                 ).fetchone()
                 current_share = str(item.get("currentShareUrl") or "").strip()
                 share_url = str(existing["share_url"]) if existing else current_share
-                immediate = 0 if not share_url else epoch_now() + interval_hours * 3600
+                immediate = (
+                    0 if not share_url else epoch_now() + max(300, interval_seconds)
+                )
                 db.execute(
                     """
                     INSERT INTO resources(
@@ -676,9 +733,32 @@ def normalize_settings(payload: dict[str, Any]) -> dict[str, Any]:
         interval = 3
     if interval not in {1, 3, 6, 12, 24}:
         interval = 3
+    configured_minutes = os.getenv("EXECUTOR_CHECK_INTERVAL_MINUTES", "").strip()
+    try:
+        interval_minutes = int(
+            configured_minutes or payload.get("checkIntervalMinutes") or interval * 60
+        )
+    except (TypeError, ValueError):
+        interval_minutes = interval * 60
+    interval_minutes = max(5, min(interval_minutes, 1440))
     return {
         "checkIntervalHours": interval,
+        "checkIntervalMinutes": interval_minutes,
         "autoShare": bool(payload.get("autoShare", True)),
         "folderByTitle": bool(payload.get("folderByTitle", True)),
         "retryEnabled": bool(payload.get("retryEnabled", True)),
     }
+
+
+def settings_interval_seconds(settings: dict[str, Any]) -> int:
+    try:
+        minutes = int(settings.get("checkIntervalMinutes") or 0)
+    except (TypeError, ValueError):
+        minutes = 0
+    if minutes:
+        return max(5, min(minutes, 1440)) * 60
+    try:
+        hours = int(settings.get("checkIntervalHours") or 3)
+    except (TypeError, ValueError):
+        hours = 3
+    return max(1, min(hours, 24)) * 3600

@@ -2,7 +2,7 @@ services:
   - type: web
     runtime: docker
     name: netdisk-sync-executor-v2
-    plan: starter
+    plan: free
     region: singapore
     dockerfilePath: ./Dockerfile.executor
     dockerContext: .
@@ -14,13 +14,21 @@ services:
         generateValue: true
       - key: EXECUTOR_MASTER_KEY
         generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: EXECUTOR_REQUIRE_POSTGRES
+        value: "true"
       - key: EXECUTOR_DATA_DIR
-        value: /var/lib/netdisk-executor
+        value: /tmp/netdisk-executor
+      - key: EXECUTOR_CHECK_INTERVAL_MINUTES
+        value: "5"
+      - key: GITHUB_WAKE_REPOSITORY
+        value: hzf803520-glitch/netdisk-auto-sync
+      - key: GITHUB_WAKE_WORKFLOW
+        value: .github/workflows/executor-keepalive.yml
+      - key: GITHUB_WAKE_REF
+        value: refs/heads/main
       - key: EXECUTOR_SOURCE_URL
         value: https://github.com/hzf803520-glitch/netdisk-auto-sync/tree/executor-v2
       - key: TZ
         value: Asia/Shanghai
-    disk:
-      name: executor-data
-      mountPath: /var/lib/netdisk-executor
-      sizeGB: 5

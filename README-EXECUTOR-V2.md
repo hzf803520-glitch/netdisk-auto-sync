@@ -11,7 +11,8 @@ Cookie。
 - 将“电视剧/动漫名称、源分享链接、目标目录”按幂等键持久化；
 - 首次转存、定时源目录指纹比较、新增文件补存；
 - 创建自己的分享链接并做匿名访问校验；
-- SQLite 持久化队列、失败指数退避、服务重启后恢复；
+- Neon PostgreSQL 持久化队列、失败指数退避、服务重启后恢复；
+- GitHub Actions 每 5 分钟安全唤醒，常见更新发现时间约 5–10 分钟；
 - 实现管理站要求的 `/v1/*` 协议 v2 接口。
 
 登录窗口优先用于扫描官方网盘二维码。账号密码、Cookie 和 token 不会返回
@@ -19,15 +20,20 @@ Cookie。
 
 ## Render 部署
 
-仓库根目录的 `render.yaml` 会创建：
+仓库根目录的 `render.yaml` 会创建一个完全免费的 Docker Web Service：
 
-- 一个 Docker Web Service（Starter 实例）；
-- 一个挂载到 `/var/lib/netdisk-executor` 的 5 GB 持久磁盘；
+- Render Free 负责运行执行器和无头 Chromium；
+- Neon Free 通过 `DATABASE_URL` 保存加密账号会话、任务和同步状态；
 - Render 自动生成的 `EXECUTOR_TOKEN` 与 `EXECUTOR_MASTER_KEY`；
 - `/livez` 健康检查和提交后自动部署。
 
-Render 免费 Web Service 会休眠且不能挂载持久磁盘，因此不适合持续监控。
-创建 Blueprint 前请先确认 Render 控制台展示的月度费用。
+GitHub Actions 使用短时 OIDC 身份令牌调用 `/v1/maintenance/run`，不需要在
+公开仓库保存执行器令牌。工作流每 5 分钟触发一次，因此正常情况下会在
+Render 的 15 分钟休眠阈值前续期，同时执行到期同步任务。免费服务没有
+运行时 SLA，所以这是近实时轮询，不承诺秒级实时或绝对无延迟。
+
+部署时必须将 Neon 的池化连接串写入 Render 的 `DATABASE_URL`。不要将连接串、
+数据库密码、执行器令牌或主密钥提交到 GitHub。
 
 部署完成后，将下面两项安全写入管理站运行环境：
 
@@ -42,6 +48,7 @@ Render 免费 Web Service 会休眠且不能挂载持久磁盘，因此不适合
 export EXECUTOR_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 export EXECUTOR_MASTER_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 export EXECUTOR_DATA_DIR=/tmp/netdisk-executor
+export EXECUTOR_CHECK_INTERVAL_MINUTES=5
 cd backend
 uvicorn app.executor_v2.app:app --host 127.0.0.1 --port 10000
 ```
@@ -59,8 +66,9 @@ curl -H "Authorization: Bearer $EXECUTOR_TOKEN" \
 - 登录窗口令牌位于 URL fragment，不会进入 HTTP 访问日志，10 分钟后失效；
 - 网盘会话使用独立主密钥加密后才写入磁盘；
 - 日志不记录 Cookie、密码或网盘 token；
-- 最短检查周期为 1 小时，并带随机抖动与指数退避；
-- 持久磁盘只允许单实例访问，不应开启多实例扩容。
+- 免费部署默认每 5 分钟检查一次，并带随机抖动与指数退避；
+- GitHub OIDC 只接受指定仓库、`main` 分支和指定工作流；
+- Render 只运行单实例；长期状态必须写入 Neon，不能依赖本地文件。
 
 ## 验收
 

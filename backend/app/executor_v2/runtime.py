@@ -7,6 +7,7 @@ import threading
 from typing import Any
 
 from app.executor_v2.browser_login import BrowserLoginManager
+from app.executor_v2.github_oidc import GitHubWakeAuth
 from app.executor_v2.providers import ProviderService, SUPPORTED_PROVIDERS
 from app.executor_v2.scheduler import ResourceScheduler
 from app.executor_v2.store import ExecutorStore
@@ -23,6 +24,7 @@ class ExecutorRuntime:
                 "EXECUTOR_TOKEN is required and must contain at least 32 characters"
             )
         self.token = token
+        self.github_wake_auth = GitHubWakeAuth()
         self.store = ExecutorStore()
         self.providers = ProviderService(self.store)
         self.browsers = BrowserLoginManager(self.store.profile_dir)
@@ -55,6 +57,11 @@ class ExecutorRuntime:
             return False
         supplied = authorization[len(prefix) :].strip()
         return bool(supplied) and hmac.compare_digest(supplied, self.token)
+
+    def valid_maintenance_bearer(self, authorization: str) -> bool:
+        return self.valid_bearer(authorization) or self.github_wake_auth.valid_bearer(
+            authorization
+        )
 
     def start_login(self, provider: str) -> dict[str, Any]:
         if provider not in SUPPORTED_PROVIDERS:

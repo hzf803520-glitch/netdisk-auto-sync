@@ -7,9 +7,14 @@ import unittest
 from unittest.mock import patch
 
 from app.executor_v2.browser_login import _search_refresh_token
+from app.executor_v2.github_oidc import GitHubWakeAuth
 from app.executor_v2.providers import _episode_info, _minimal_transfer_roots
 from app.executor_v2.scheduler import ResourceScheduler
-from app.executor_v2.store import ExecutorStore, normalize_settings
+from app.executor_v2.store import (
+    ExecutorStore,
+    normalize_settings,
+    settings_interval_seconds,
+)
 
 
 class StoreTests(unittest.TestCase):
@@ -45,6 +50,17 @@ class StoreTests(unittest.TestCase):
             ).fetchone()[0]
         self.assertNotIn("secret-value", encrypted)
 
+    def test_required_postgres_fails_closed_without_database_url(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DATABASE_URL": "",
+                "EXECUTOR_REQUIRE_POSTGRES": "true",
+            },
+        ):
+            with self.assertRaisesRegex(RuntimeError, "DATABASE_URL"):
+                ExecutorStore()
+
     def test_registration_is_idempotent_and_initially_due(self) -> None:
         resource = {
             "resourceKey": "resource-1",
@@ -55,12 +71,12 @@ class StoreTests(unittest.TestCase):
             "monitorEnabled": True,
         }
         self.assertEqual(
-            self.store.register_resources([resource], interval_hours=3),
+            self.store.register_resources([resource], interval_seconds=300),
             (1, 0),
         )
         resource["title"] = "千香（更新）"
         self.assertEqual(
-            self.store.register_resources([resource], interval_hours=3),
+            self.store.register_resources([resource], interval_seconds=300),
             (1, 0),
         )
         rows = self.store.due_resources()
@@ -80,7 +96,7 @@ class StoreTests(unittest.TestCase):
                     "monitorEnabled": False,
                 }
             ],
-            interval_hours=3,
+            interval_seconds=300,
         )
         self.assertTrue(self.store.enqueue_resource("resource-2", "check"))
         due = self.store.due_resources()
@@ -135,6 +151,44 @@ class HelperTests(unittest.TestCase):
             1,
         )
 
+    def test_free_scheduler_can_use_five_minute_interval(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"EXECUTOR_CHECK_INTERVAL_MINUTES": "5"},
+        ):
+            settings = normalize_settings({"checkIntervalHours": 3})
+        self.assertEqual(settings["checkIntervalMinutes"], 5)
+        self.assertEqual(settings_interval_seconds(settings), 300)
+
+    def test_github_oidc_claim_scope(self) -> None:
+        auth = GitHubWakeAuth()
+        self.assertTrue(
+            auth._claims_allowed(
+                {
+                    "repository": "hzf803520-glitch/netdisk-auto-sync",
+                    "ref": "refs/heads/main",
+                    "event_name": "schedule",
+                    "workflow_ref": (
+                        "hzf803520-glitch/netdisk-auto-sync/"
+                        ".github/workflows/executor-keepalive.yml@refs/heads/main"
+                    ),
+                }
+            )
+        )
+        self.assertFalse(
+            auth._claims_allowed(
+                {
+                    "repository": "attacker/repository",
+                    "ref": "refs/heads/main",
+                    "event_name": "schedule",
+                    "workflow_ref": (
+                        "attacker/repository/"
+                        ".github/workflows/executor-keepalive.yml@refs/heads/main"
+                    ),
+                }
+            )
+        )
+
 
 class SchedulerTests(unittest.TestCase):
     def test_success_clears_pending_action(self) -> None:
@@ -159,7 +213,7 @@ class SchedulerTests(unittest.TestCase):
                         "targetFolder": "自动转存/测试",
                     }
                 ],
-                interval_hours=3,
+                interval_seconds=300,
             )
 
             class FakeProviders:

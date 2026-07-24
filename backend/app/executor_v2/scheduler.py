@@ -3,18 +3,24 @@ from __future__ import annotations
 import logging
 import random
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
 from app.executor_v2.providers import ProviderService
-from app.executor_v2.store import ExecutorStore, epoch_now, utc_now
+from app.executor_v2.store import (
+    ExecutorStore,
+    epoch_now,
+    settings_interval_seconds,
+    utc_now,
+)
 
 
 logger = logging.getLogger(__name__)
 
 
 class ResourceScheduler:
-    """Small persistent scheduler backed by the executor SQLite database."""
+    """Small persistent scheduler backed by the executor database."""
 
     def __init__(
         self,
@@ -35,6 +41,7 @@ class ResourceScheduler:
         self._thread: threading.Thread | None = None
         self._inflight: set[str] = set()
         self._lock = threading.RLock()
+        self._maintenance_lock = threading.Lock()
 
     def start(self) -> None:
         with self._lock:
@@ -64,6 +71,39 @@ class ResourceScheduler:
 
     def notify(self) -> None:
         self._wake.set()
+
+    def run_due_and_wait(self, timeout_seconds: int = 240) -> dict[str, Any]:
+        """Keep one HTTP request open while due background work is running."""
+        if not self._maintenance_lock.acquire(blocking=False):
+            with self._lock:
+                active = len(self._inflight)
+            return {"busy": True, "inFlight": active, "remaining": 0}
+        started = time.monotonic()
+        try:
+            deadline = started + max(10, min(int(timeout_seconds), 840))
+            while not self._stop.is_set():
+                self._dispatch_due()
+                with self._lock:
+                    active = len(self._inflight)
+                due = self.store.due_resources(limit=1)
+                if not due and active == 0:
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._wake.wait(timeout=min(2, remaining))
+                self._wake.clear()
+            with self._lock:
+                active = len(self._inflight)
+            due_count = 1 if self.store.due_resources(limit=1) else 0
+            return {
+                "busy": bool(active or due_count),
+                "inFlight": active,
+                "remaining": due_count,
+                "elapsedSeconds": round(time.monotonic() - started, 2),
+            }
+        finally:
+            self._maintenance_lock.release()
 
     def _loop(self) -> None:
         while not self._stop.is_set():
@@ -137,7 +177,7 @@ class ResourceScheduler:
                 pending_action = action
                 retry_message = f"{error_text}；第 {retry_count} 次重试将在稍后自动进行"
             else:
-                next_run = self._next_regular_run(int(settings["checkIntervalHours"]))
+                next_run = self._next_regular_run(settings_interval_seconds(settings))
                 pending_action = ""
                 retry_message = error_text
             self.store.update_resource(
@@ -155,14 +195,14 @@ class ResourceScheduler:
         self.store.update_resource(
             key,
             **result,
-            next_run_at=self._next_regular_run(int(settings["checkIntervalHours"])),
+            next_run_at=self._next_regular_run(settings_interval_seconds(settings)),
             retry_count=0,
             pending_action="",
         )
 
     @staticmethod
-    def _next_regular_run(interval_hours: int) -> float:
-        interval = max(1, int(interval_hours)) * 3600
+    def _next_regular_run(interval_seconds: int) -> float:
+        interval = max(300, int(interval_seconds))
         return epoch_now() + interval * random.uniform(0.95, 1.08)
 
 

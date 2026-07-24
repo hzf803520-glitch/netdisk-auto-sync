@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.executor_v2.providers import SUPPORTED_PROVIDERS
 from app.executor_v2.runtime import ExecutorRuntime, get_runtime
+from app.executor_v2.store import settings_interval_seconds
 
 
 router = APIRouter()
@@ -42,6 +43,9 @@ CAPABILITIES = {
     "createShare": True,
     "validateShare": True,
     "resourceStatus": True,
+    "githubOidcWake": True,
+    "postgresPersistence": True,
+    "nearRealtimePolling": True,
 }
 
 
@@ -82,10 +86,21 @@ class LoginControl(BaseModel):
     key: str | None = Field(default=None, max_length=40)
 
 
+class MaintenanceRequest(BaseModel):
+    waitSeconds: int = Field(default=240, ge=10, le=840)
+
+
 def _runtime_with_auth(request: Request) -> ExecutorRuntime:
     runtime = get_runtime()
     if not runtime.valid_bearer(request.headers.get("authorization", "")):
         raise HTTPException(status_code=401, detail="执行器访问令牌无效")
+    return runtime
+
+
+def _runtime_with_maintenance_auth(request: Request) -> ExecutorRuntime:
+    runtime = get_runtime()
+    if not runtime.valid_maintenance_bearer(request.headers.get("authorization", "")):
+        raise HTTPException(status_code=401, detail="定时唤醒令牌无效")
     return runtime
 
 
@@ -240,7 +255,7 @@ def register_resources(
     settings = runtime.store.get_settings()
     accepted, rejected = runtime.store.register_resources(
         body.resources[:500],
-        interval_hours=int(settings["checkIntervalHours"]),
+        interval_seconds=settings_interval_seconds(settings),
     )
     if accepted:
         runtime.scheduler.notify()
@@ -285,7 +300,7 @@ def _queue_command(
                 "monitorEnabled": body.monitorEnabled,
             }
         ],
-        interval_hours=int(settings["checkIntervalHours"]),
+        interval_seconds=settings_interval_seconds(settings),
     )
     if not accepted or not runtime.scheduler.enqueue(body.resourceKey, action):
         raise HTTPException(status_code=500, detail="任务进入队列失败")
@@ -313,6 +328,18 @@ def check(
     runtime: ExecutorRuntime = Depends(_runtime_with_auth),
 ):
     return _queue_command(body, "check", runtime)
+
+
+@router.post("/v1/maintenance/run")
+def maintenance_run(
+    body: MaintenanceRequest,
+    runtime: ExecutorRuntime = Depends(_runtime_with_maintenance_auth),
+):
+    return {
+        "ok": True,
+        "persistence": runtime.store.backend,
+        **runtime.scheduler.run_due_and_wait(body.waitSeconds),
+    }
 
 
 def _public_login_token(request: Request) -> str:

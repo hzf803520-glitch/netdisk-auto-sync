@@ -3,8 +3,9 @@ from __future__ import annotations
 import os
 import sqlite3
 import tempfile
+import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app.executor_v2.browser_login import (
     VIEWPORT_HEIGHT,
@@ -13,7 +14,8 @@ from app.executor_v2.browser_login import (
 )
 from app.executor_v2.github_oidc import GitHubWakeAuth
 from app.executor_v2.providers import _episode_info, _minimal_transfer_roots
-from app.executor_v2.runtime import _browser_launch_message
+from app.executor_v2.router import LOGIN_PAGE
+from app.executor_v2.runtime import ExecutorRuntime, _browser_launch_message
 from app.executor_v2.scheduler import ResourceScheduler
 from app.executor_v2.store import (
     ExecutorStore,
@@ -156,6 +158,35 @@ class HelperTests(unittest.TestCase):
         )
         self.assertNotIn("Stacktrace", message)
         self.assertIn("启动失败", message)
+
+    def test_login_token_survives_page_refresh(self) -> None:
+        self.assertIn(
+            'sessionStorage.setItem(storageKey, hashToken)',
+            LOGIN_PAGE,
+        )
+        self.assertIn(
+            'token=sessionStorage.getItem(storageKey) || ""',
+            LOGIN_PAGE,
+        )
+        self.assertLess(
+            LOGIN_PAGE.index('sessionStorage.getItem(storageKey)'),
+            LOGIN_PAGE.index('const headers = {"x-login-token": token}'),
+        )
+
+    def test_missing_login_browser_is_relaunched_only_once(self) -> None:
+        runtime = object.__new__(ExecutorRuntime)
+        runtime._auth_lock = threading.RLock()
+        runtime._launching = set()
+        runtime.browsers = MagicMock()
+        runtime.browsers.has_session.return_value = False
+        runtime._launch_login = MagicMock()
+
+        with patch("app.executor_v2.runtime.threading.Thread") as thread:
+            runtime._ensure_login_browser("session-1", "baidu")
+            runtime._ensure_login_browser("session-1", "baidu")
+
+        thread.assert_called_once()
+        thread.return_value.start.assert_called_once()
 
     def test_settings_floor_is_one_hour(self) -> None:
         self.assertEqual(

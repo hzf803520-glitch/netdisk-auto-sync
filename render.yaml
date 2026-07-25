@@ -5,22 +5,18 @@ services:
     plan: free
     region: singapore
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /healthz
+    healthCheckPath: /api/health
     autoDeployTrigger: commit
     envVars:
       - key: PORT
         value: 10000
-      - key: HOST
-        value: 0.0.0.0
       - key: DATABASE_URL
         sync: false
-      - key: ADMIN_USER
-        value: admin
-      - key: ADMIN_PASSWORD
-        sync: false
-      - key: COOKIE_ENCRYPTION_KEY
+      - key: CREDENTIAL_SECRET
         generateValue: true
       - key: CRON_SECRET
         generateValue: true
-      - key: DEFAULT_INTERVAL_MINUTES
-        value: 60
+      - key: FIRECRAWL_API_URL
+        sync: false
+      - key: SYNC_CONCURRENCY
+        value: 3

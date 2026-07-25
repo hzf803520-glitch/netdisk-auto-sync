@@ -1,0 +1,31 @@
+name: Validate uploaded Next.js app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Extract uploaded app source
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/app
+          cat deploy-source/app-lite.part* | base64 -d | tar -xz -C /tmp/app
+      - name: Install dependencies
+        working-directory: /tmp/app
+        run: npm install --no-audit --no-fund
+      - name: Build
+        working-directory: /tmp/app
+        run: npm run build

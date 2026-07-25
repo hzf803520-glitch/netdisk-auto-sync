@@ -1,18 +1,16 @@
-FROM golang:1.24-bookworm AS worker
-WORKDIR /src
-COPY go.mod ./
-RUN go get github.com/wgx0307/netdisk@eb4cd97607558d1c54ed317fdf9aa1b364ea3535
-COPY cmd ./cmd
-RUN go build -trimpath -ldflags="-s -w" -o /out/netdisk-worker ./cmd/netdisk-worker
+FROM node:22-alpine
 
-FROM python:3.12-slim-bookworm
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-COPY v2 ./v2
-COPY --from=worker /out/netdisk-worker ./bin/netdisk-worker
-RUN useradd -m -u 10001 appuser && chown -R appuser:appuser /app
-USER appuser
+RUN corepack enable && corepack prepare pnpm@10 --activate
+
+COPY deploy-source/app-lite.part* /tmp/source-parts/
+RUN cat /tmp/source-parts/app-lite.part* | base64 -d | tar -xz -C /app && rm -rf /tmp/source-parts
+
+RUN pnpm install --no-frozen-lockfile && pnpm run build
+
+ENV NODE_ENV=production
+ENV PORT=10000
+ENV HOSTNAME=0.0.0.0
 EXPOSE 10000
-CMD ["python", "v2/app.py"]
+
+CMD ["pnpm", "run", "start"]

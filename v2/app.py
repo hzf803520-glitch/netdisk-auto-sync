@@ -10,5 +10,6 @@ source = source[: -len(main_block)]
 source += "\n" + (base / "helper_fix.py").read_text(encoding="utf-8")
 source += "\n\n" + (base / "incremental_v3.py").read_text(encoding="utf-8")
 source += "\n\n" + (base / "quark_v31_fix.py").read_text(encoding="utf-8")
+source += "\n\n" + (base / "document_watch_v4.py").read_text(encoding="utf-8")
 source += "\n\n" + main_block
 exec(compile(source, str(base / "app.generated.py"), "exec"), globals())

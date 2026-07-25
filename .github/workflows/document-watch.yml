@@ -1,0 +1,36 @@
+name: Shared document watch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wake Render and check document changes
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          RENDER_URL: ${{ secrets.RENDER_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          BASE_URL="${APP_URL:-${RENDER_URL:-}}"
+          if [ -z "$BASE_URL" ]; then
+            echo "请在 GitHub Actions Secrets 中设置 APP_URL 或 RENDER_URL"
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "请在 GitHub Actions Secrets 中设置 CRON_SECRET"
+            exit 1
+          fi
+          curl --fail --show-error --silent \
+            --retry 5 --retry-all-errors --retry-delay 20 \
+            --max-time 240 \
+            -H "X-Cron-Secret: $CRON_SECRET" \
+            "${BASE_URL%/}/api/watch/cron"

@@ -22,7 +22,7 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/app
           cat deploy-source/app-lite.part* | base64 -d | tar -xz -C /tmp/app
-          base64 -d deploy-source/kdocs-cookie-override.b64 | tar -xz -C /tmp/app
+          cat deploy-source/kdocs-override.part* | base64 -d | tar -xz -C /tmp/app
       - name: Install dependencies
         working-directory: /tmp/app
         run: npm install --no-audit --no-fund

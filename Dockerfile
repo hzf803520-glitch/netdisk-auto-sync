@@ -5,19 +5,11 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-# 使用用户原本的 Next.js 项目
+# 使用用户原本已经跑通的完整 Next.js 项目。
+# 原项目本身已经包含共享文档 Cookie、前 500 条读取、变化监听、增量同步和 CSV 导出。
 COPY deploy-source/app-lite.part* /tmp/source-parts/
 RUN cat /tmp/source-parts/app-lite.part* | base64 -d | tar -xz -C /app \
   && rm -rf /tmp/source-parts
-
-# 追加 KDocs Cookie 读取和前500条同步功能
-# 分片直接按文件顺序合并，不做固定长度和 SHA 校验，避免 GitHub 内容转换导致误失败
-COPY deploy-source/kdocs-override.part* /tmp/kdocs-override/
-RUN set -eux; \
-  cat /tmp/kdocs-override/kdocs-override.part* > /tmp/kdocs-override.b64; \
-  base64 -d /tmp/kdocs-override.b64 > /tmp/kdocs-override.tar.gz; \
-  tar -xzf /tmp/kdocs-override.tar.gz -C /app; \
-  rm -rf /tmp/kdocs-override /tmp/kdocs-override.b64 /tmp/kdocs-override.tar.gz
 
 RUN npm install --no-audit --no-fund \
   && npm run build

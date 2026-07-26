@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -21,62 +21,13 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf /tmp/app
-          mkdir -p /tmp/app diagnostics
+          mkdir -p /tmp/app
           cat deploy-source/app-lite.part* | base64 -d | tar -xz -C /tmp/app
-      - name: Build and record result
-        id: verify
-        shell: bash
-        run: |
-          set +e
-          {
-            echo "commit=${GITHUB_SHA}"
-            echo "started_at=$(date -u +%FT%TZ)"
-            echo "=== npm install ==="
-            cd /tmp/app
-            npm install --no-audit --no-fund
-            install_status=$?
-            echo "npm_install_status=${install_status}"
-            if [ "$install_status" -eq 0 ]; then
-              echo "=== npm run build ==="
-              npm run build
-              build_status=$?
-            else
-              build_status=99
-            fi
-            echo "next_build_status=${build_status}"
-            cd "$GITHUB_WORKSPACE"
-            if [ "$install_status" -eq 0 ] && [ "$build_status" -eq 0 ]; then
-              echo "=== docker build ==="
-              docker build -t netdisk-auto-sync:latest .
-              docker_status=$?
-            else
-              docker_status=99
-            fi
-            echo "docker_build_status=${docker_status}"
-            if [ "$install_status" -eq 0 ] && [ "$build_status" -eq 0 ] && [ "$docker_status" -eq 0 ]; then
-              echo "RESULT=SUCCESS"
-              final_status=0
-            else
-              echo "RESULT=FAILED"
-              final_status=1
-            fi
-            echo "finished_at=$(date -u +%FT%TZ)"
-          } 2>&1 | tee diagnostics/build-result.txt
-          final_status=$(grep -q '^RESULT=SUCCESS$' diagnostics/build-result.txt; echo $?)
-          if [ "$final_status" -eq 0 ]; then
-            echo "passed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "passed=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Commit build report
-        if: always()
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add diagnostics/build-result.txt
-          git diff --cached --quiet && exit 0
-          git commit -m 'diagnostics: record deployment build result [skip ci]'
-          git push
-      - name: Fail when verification failed
-        if: steps.verify.outputs.passed != 'true'
-        run: exit 1
+      - name: Install dependencies
+        working-directory: /tmp/app
+        run: npm install --no-audit --no-fund
+      - name: TypeScript and Next.js build
+        working-directory: /tmp/app
+        run: npm run build
+      - name: Validate Docker image
+        run: docker build -t netdisk-auto-sync:latest .

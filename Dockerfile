@@ -10,6 +10,11 @@ COPY deploy-source/app-lite.part* /tmp/source-parts/
 RUN cat /tmp/source-parts/app-lite.part* | base64 -d | tar -xz -C /app \
   && rm -rf /tmp/source-parts
 
+# Apply targeted fixes after unpacking the uploaded application source.
+COPY overrides/app/api/providers/config/route.ts /app/app/api/providers/config/route.ts
+COPY overrides/app/components/netdisk-setup.tsx /app/app/components/netdisk-setup.tsx
+COPY overrides/lib/secrets.ts /app/lib/secrets.ts
+
 RUN npm install --no-audit --no-fund \
   && npm run build
 

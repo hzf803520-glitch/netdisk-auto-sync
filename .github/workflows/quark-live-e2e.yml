@@ -1,0 +1,155 @@
+name: 夸克线上端到端验证
+
+on:
+  push:
+    branches:
+      - post-deploy-quark-e2e
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/quark-live-e2e.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  quark-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      RENDER_URL: ${{ secrets.RENDER_URL }}
+      ADMIN_USER: ${{ secrets.ADMIN_USER }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+    steps:
+      - name: 检查测试配置
+        run: |
+          test -n "$RENDER_URL" || (echo "缺少 RENDER_URL" && exit 1)
+          test -n "$ADMIN_PASSWORD" || (echo "缺少 ADMIN_PASSWORD" && exit 1)
+          if [ -z "$ADMIN_USER" ]; then echo "ADMIN_USER=admin" >> "$GITHUB_ENV"; fi
+          echo "等待 Render 部署：$RENDER_URL"
+
+      - name: 等待 V3.1 部署上线
+        run: |
+          set -e
+          base="${RENDER_URL%/}"
+          ready=0
+          for i in $(seq 1 72); do
+            if curl -fsS --max-time 40 -u "$ADMIN_USER:$ADMIN_PASSWORD" "$base/" -o /tmp/home.html 2>/dev/null && grep -q "V3.1" /tmp/home.html; then
+              echo "V3.1 已上线"
+              ready=1
+              break
+            fi
+            echo "第 $i 次等待部署完成..."
+            sleep 10
+          done
+          test "$ready" = "1" || (echo "等待 V3.1 上线超时" && exit 1)
+
+      - name: 查找真实夸克资源
+        run: |
+          set -e
+          base="${RENDER_URL%/}"
+          curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" "$base/api/resources" -o /tmp/resources-before.json
+          python - <<'PY'
+          import json
+          data=json.load(open('/tmp/resources-before.json',encoding='utf-8'))
+          rows=[x for x in data.get('items',[]) if '52e2af262bf6' in str(x.get('source_url') or '')]
+          assert rows, data
+          row=rows[0]
+          open('/tmp/resource-id','w').write(str(row['id']))
+          print('找到资源 ID：', row['id'], '当前名称：', row.get('title'), '目标：', row.get('target_path'))
+          PY
+
+      - name: 检查名称和递归文件
+        run: |
+          set -e
+          base="${RENDER_URL%/}"
+          id=$(cat /tmp/resource-id)
+          curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" -H 'Content-Type: application/json' -d '{}' "$base/api/resources/$id/check" -o /tmp/check-start.json
+          cat /tmp/check-start.json
+          for i in $(seq 1 90); do
+            curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" "$base/api/job-state" -o /tmp/job.json
+            running=$(python -c "import json; print(str(bool(json.load(open('/tmp/job.json'))['state'].get('running'))).lower())")
+            [ "$running" = "false" ] && break
+            sleep 4
+          done
+          curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" "$base/api/resources" -o /tmp/resources-checked.json
+          python - <<'PY'
+          import json
+          rid=int(open('/tmp/resource-id').read())
+          data=json.load(open('/tmp/resources-checked.json',encoding='utf-8'))
+          row=next(x for x in data['items'] if int(x['id'])==rid)
+          pending=json.loads(row.get('pending_snapshot') or '[]')
+          assert row.get('title') == '夸克精选壁纸', row
+          assert row.get('target_path') == '/资源/夸克精选壁纸', row
+          assert len(pending) > 1, pending
+          assert any('/' in str(x.get('path') or '') for x in pending), pending[:20]
+          assert row.get('status') in {'update_available','no_change'}, row
+          print('检查通过：名称=',row['title'],'递归文件数=',len(pending),'目标=',row['target_path'])
+          PY
+
+      - name: 实际转存到对应文件夹
+        run: |
+          set -e
+          base="${RENDER_URL%/}"
+          id=$(cat /tmp/resource-id)
+          curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" -H 'Content-Type: application/json' -d '{}' "$base/api/resources/$id/full" -o /tmp/sync-start.json
+          cat /tmp/sync-start.json
+          for i in $(seq 1 150); do
+            curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" "$base/api/job-state" -o /tmp/job-sync.json
+            running=$(python -c "import json; print(str(bool(json.load(open('/tmp/job-sync.json'))['state'].get('running'))).lower())")
+            [ "$running" = "false" ] && break
+            echo "等待转存完成：$i"
+            sleep 5
+          done
+          curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" "$base/api/resources" -o /tmp/resources-synced.json
+          python - <<'PY'
+          import json
+          rid=int(open('/tmp/resource-id').read())
+          data=json.load(open('/tmp/resources-synced.json',encoding='utf-8'))
+          row=next(x for x in data['items'] if int(x['id'])==rid)
+          snapshot=json.loads(row.get('source_snapshot') or '[]')
+          assert row.get('status') == 'success', row
+          assert row.get('target_url'), row
+          assert row.get('target_fid'), row
+          assert row.get('target_path') == '/资源/夸克精选壁纸', row
+          assert len(snapshot) > 1 and any('/' in str(x.get('path') or '') for x in snapshot), snapshot[:20]
+          print('转存成功：',row['target_url'],'目标FID：',row['target_fid'])
+          PY
+
+      - name: 验证目标文件夹中确实有文件
+        run: |
+          set -e
+          base="${RENDER_URL%/}"
+          id=$(cat /tmp/resource-id)
+          curl -fsS --max-time 150 -u "$ADMIN_USER:$ADMIN_PASSWORD" "$base/api/resources/$id/target-files" -o /tmp/target-files.json
+          cat /tmp/target-files.json
+          python - <<'PY'
+          import json
+          resource_data=json.load(open('/tmp/resources-synced.json',encoding='utf-8'))
+          rid=int(open('/tmp/resource-id').read())
+          row=next(x for x in resource_data['items'] if int(x['id'])==rid)
+          target=json.load(open('/tmp/target-files.json',encoding='utf-8'))
+          assert target.get('success'), target
+          files=target.get('files') or []
+          assert len(files) > 0, target
+          source=json.loads(row.get('source_snapshot') or '[]')
+          result={
+            'resource_id': rid,
+            'title': row.get('title'),
+            'target_path': row.get('target_path'),
+            'target_url': row.get('target_url'),
+            'source_file_count': len(source),
+            'target_file_count': len(files),
+            'target_sample': [x.get('name') or x.get('path') for x in files[:30]],
+            'status': row.get('status'),
+          }
+          json.dump(result,open('/tmp/quark-e2e-result.json','w',encoding='utf-8'),ensure_ascii=False,indent=2)
+          print(json.dumps(result,ensure_ascii=False,indent=2))
+          PY
+
+      - name: 保存验证结果
+        uses: actions/upload-artifact@v4
+        with:
+          name: quark-e2e-result
+          path: /tmp/quark-e2e-result.json

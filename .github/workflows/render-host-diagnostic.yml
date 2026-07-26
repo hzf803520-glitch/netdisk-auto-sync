@@ -1,0 +1,32 @@
+name: Render 服务地址诊断
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/render-host-diagnostic.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-hosts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ADMIN_USER: ${{ secrets.ADMIN_USER }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+    steps:
+      - name: 检查候选服务地址
+        run: |
+          set -e
+          test -n "$ADMIN_PASSWORD" || (echo "缺少 ADMIN_PASSWORD" && exit 1)
+          [ -n "$ADMIN_USER" ] || ADMIN_USER=admin
+          for base in https://netdisk-auto-sync.onrender.com https://netdisk-auto-sync-v2.onrender.com; do
+            file="/tmp/$(echo "$base" | tr '/:' '__').html"
+            code=$(curl -sS --max-time 90 -u "$ADMIN_USER:$ADMIN_PASSWORD" -w '%{http_code}' "$base/" -o "$file" || true)
+            title=$(grep -oE '<title>[^<]+' "$file" 2>/dev/null | head -1 | sed 's/<title>//' || true)
+            has31=no; grep -q 'V3.1' "$file" 2>/dev/null && has31=yes
+            echo "HOST=$base HTTP=$code TITLE=$title V31=$has31"
+          done

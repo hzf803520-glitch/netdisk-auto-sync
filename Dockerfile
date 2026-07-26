@@ -22,7 +22,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app /app
-COPY server.js /app/server.js
+COPY server.cjs /app/server.cjs
 
 ENV NODE_ENV=production
 ENV PORT=10000
@@ -30,4 +30,4 @@ ENV HOSTNAME=0.0.0.0
 ENV CHROMIUM_PATH=/usr/bin/chromium
 
 EXPOSE 10000
-CMD ["node", "server.js"]
+CMD ["node", "server.cjs"]

@@ -11,9 +11,9 @@ RUN cat /tmp/source-parts/app-lite.part* | base64 -d | tar -xz -C /app \
   && rm -rf /tmp/source-parts
 
 # 只覆盖新增的金山文档 Cookie 读取、前 500 条识别、变化监听和增量同步功能。
-COPY deploy-source/kdocs-cookie-override.b64 /tmp/kdocs-cookie-override.b64
-RUN base64 -d /tmp/kdocs-cookie-override.b64 | tar -xz -C /app \
-  && rm -f /tmp/kdocs-cookie-override.b64
+COPY deploy-source/kdocs-override.part* /tmp/kdocs-override/
+RUN cat /tmp/kdocs-override/kdocs-override.part* | base64 -d | tar -xz -C /app \
+  && rm -rf /tmp/kdocs-override
 
 RUN npm install --no-audit --no-fund \
   && npm run build

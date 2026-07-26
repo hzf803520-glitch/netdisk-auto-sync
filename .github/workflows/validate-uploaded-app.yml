@@ -22,7 +22,19 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/app
           cat deploy-source/app-lite.part* | base64 -d | tar -xz -C /tmp/app
-          cat deploy-source/kdocs-override.part* | base64 -d | tar -xz -C /tmp/app
+          : > /tmp/kdocs-override.b64
+          for file in \
+            deploy-source/kdocs-override.part00 \
+            deploy-source/kdocs-override.part01 \
+            deploy-source/kdocs-override.part02 \
+            deploy-source/kdocs-override.part03; do
+            test "$(wc -c < "$file")" -ge 8198
+            head -c 8198 "$file" >> /tmp/kdocs-override.b64
+          done
+          echo "31f57d2528f66aa05c4762aaea6f7e82c35eeb3fec6a21b42fb765db01f1dff1  /tmp/kdocs-override.b64" | sha256sum -c -
+          base64 -d /tmp/kdocs-override.b64 > /tmp/kdocs-override.tar.gz
+          echo "339fef1d55e1f6fa6cf801a01214aac9474fbaec5aa0ac0cb100a8be39d05e3c  /tmp/kdocs-override.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/kdocs-override.tar.gz -C /tmp/app
       - name: Install dependencies
         working-directory: /tmp/app
         run: npm install --no-audit --no-fund

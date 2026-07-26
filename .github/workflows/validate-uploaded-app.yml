@@ -17,15 +17,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Extract uploaded app source and KDocs overlay
+      - name: Extract uploaded app source
         run: |
           set -euo pipefail
           mkdir -p /tmp/app
           cat deploy-source/app-lite.part* | base64 -d | tar -xz -C /tmp/app
-          python3 deploy-source/rebuild-kdocs-overlay.py \
-            deploy-source \
-            /tmp/kdocs-override.tar.gz
-          tar -xzf /tmp/kdocs-override.tar.gz -C /tmp/app
       - name: Install dependencies
         working-directory: /tmp/app
         run: npm install --no-audit --no-fund
@@ -33,4 +29,4 @@ jobs:
         working-directory: /tmp/app
         run: npm run build
       - name: Validate Docker image
-        run: docker build -t netdisk-auto-sync:kdocs-cookie .
+        run: docker build -t netdisk-auto-sync:latest .

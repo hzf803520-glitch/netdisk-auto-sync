@@ -1,16 +1,18 @@
-name: Extract provider source
+name: Validate provider save fix
 
 on:
   push:
     branches: [main]
     paths:
       - ".github/workflows/extract-provider-source.yml"
+      - "Dockerfile"
+      - "overrides/**"
 
 permissions:
   contents: write
 
 jobs:
-  extract:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,28 +23,28 @@ jobs:
           rm -rf /tmp/app
           mkdir -p /tmp/app
           cat deploy-source/app-lite.part* | base64 -d | tar -xz -C /tmp/app
-      - name: Copy relevant source files
+      - name: Apply provider fixes
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p diagnostics/extracted/app/api/providers/config
-          mkdir -p diagnostics/extracted/app/components
-          mkdir -p diagnostics/extracted/lib
-          cp /tmp/app/app/api/providers/config/route.ts diagnostics/extracted/app/api/providers/config/route.ts
-          cp /tmp/app/app/components/netdisk-setup.tsx diagnostics/extracted/app/components/netdisk-setup.tsx
-          cp /tmp/app/lib/db.ts diagnostics/extracted/lib/db.ts
-          cp /tmp/app/lib/secrets.ts diagnostics/extracted/lib/secrets.ts
-      - name: Commit extracted source
+          cp overrides/app/api/providers/config/route.ts /tmp/app/app/api/providers/config/route.ts
+          cp overrides/app/components/netdisk-setup.tsx /tmp/app/app/components/netdisk-setup.tsx
+          cp overrides/lib/secrets.ts /tmp/app/lib/secrets.ts
+      - name: Install and build
+        working-directory: /tmp/app
         shell: bash
         run: |
           set -euo pipefail
+          npm install --no-audit --no-fund
+          npm run build
+      - name: Record successful build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          printf 'commit=%s\nstatus=build-success\n' "${GITHUB_SHA}" > diagnostics/provider-fix-build.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add diagnostics/extracted
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git commit -m "diagnostics: extract provider save source [skip ci]"
+          git add diagnostics/provider-fix-build.txt
+          git commit -m "ci: provider fix build passed [skip ci]"
           git push
-
-# Trigger extraction after the workflow exists on the default branch.

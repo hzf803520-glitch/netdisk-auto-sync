@@ -1,0 +1,48 @@
+name: Inspect uploaded app source
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract original uploaded app
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/app
+          mkdir -p /tmp/app diagnostics
+          cat deploy-source/app-lite.part* | base64 -d | tar -xz -C /tmp/app
+      - name: Write concise source report
+        run: |
+          {
+            echo '# Uploaded app source inspection'
+            echo
+            echo '## Top-level files'
+            find /tmp/app -maxdepth 2 -type f \
+              ! -path '*/node_modules/*' \
+              ! -path '*/.next/*' \
+              | sed 's#^/tmp/app/##' | sort | head -300
+            echo
+            echo '## package.json'
+            sed -n '1,240p' /tmp/app/package.json || true
+            echo
+            echo '## Matching UI/API strings'
+            grep -RInE '双网盘自动同步中心|共享文档|CSV|Cookie|百度网盘配置|夸克网盘配置|document|watch|sync' /tmp/app \
+              --exclude-dir=node_modules --exclude-dir=.next --exclude='*.map' \
+              | head -400 || true
+          } > diagnostics/uploaded-app-source.txt
+      - name: Commit report
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add diagnostics/uploaded-app-source.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'diagnostics: inspect uploaded app source [skip ci]'
+          git push

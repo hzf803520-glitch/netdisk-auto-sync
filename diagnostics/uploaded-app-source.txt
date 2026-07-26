@@ -1,0 +1,385 @@
+# Uploaded app source inspection
+
+## Top-level files
+app/globals.css
+app/layout.tsx
+app/page.tsx
+lib/baidu-client.ts
+lib/baidu-folder-sync.ts
+lib/baidu-share-tree.ts
+lib/baidu-share.ts
+lib/baidu-transfer.ts
+lib/db.ts
+lib/document-watch.ts
+lib/error-reporter.tsx
+lib/iframe-safe-cookie.ts
+lib/netdisk-delete.ts
+lib/provider-asset-delete.ts
+lib/quark-client.ts
+lib/resource-document-parser.ts
+lib/scrape-document.ts
+lib/secrets.ts
+lib/sync-queue.ts
+next.config.ts
+package.json
+postcss.config.mjs
+tsconfig.json
+
+## package.json
+{
+  "name": "luffy-app",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "next": "16.2.6",
+    "pg": "^8.16.3",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
+
+## Matching UI/API strings
+/tmp/app/lib/db.ts:29:      options: "-c search_path=dual_sync,public",
+/tmp/app/lib/db.ts:35:async function initialize() {
+/tmp/app/lib/db.ts:38:    await client.query("CREATE SCHEMA IF NOT EXISTS dual_sync");
+/tmp/app/lib/db.ts:40:    await client.query("SET LOCAL search_path TO dual_sync, public");
+/tmp/app/lib/db.ts:65:      CREATE TABLE IF NOT EXISTS sync_sources (
+/tmp/app/lib/db.ts:67:        document_name TEXT NOT NULL DEFAULT '影视资源库',
+/tmp/app/lib/db.ts:68:        document_url TEXT NOT NULL,
+/tmp/app/lib/db.ts:75:        watch_error TEXT NOT NULL DEFAULT '',
+/tmp/app/lib/db.ts:84:      CREATE TABLE IF NOT EXISTS sync_items (
+/tmp/app/lib/db.ts:86:        source_id BIGINT REFERENCES sync_sources(id) ON DELETE CASCADE,
+/tmp/app/lib/db.ts:96:        last_synced_at TIMESTAMPTZ,
+/tmp/app/lib/db.ts:103:    await client.query("CREATE INDEX IF NOT EXISTS idx_sync_items_source ON sync_items(source_id)");
+/tmp/app/lib/db.ts:104:    await client.query("CREATE INDEX IF NOT EXISTS idx_sync_items_resource_key ON sync_items(source_id, resource_key)");
+/tmp/app/lib/db.ts:118:        item_id BIGINT NOT NULL REFERENCES sync_items(id) ON DELETE CASCADE,
+/tmp/app/lib/db.ts:126:        item_id BIGINT NOT NULL REFERENCES sync_items(id) ON DELETE CASCADE,
+/tmp/app/lib/db.ts:134:      CREATE TABLE IF NOT EXISTS sync_jobs (
+/tmp/app/lib/db.ts:136:        item_id BIGINT NOT NULL REFERENCES sync_items(id) ON DELETE CASCADE,
+/tmp/app/lib/db.ts:147:    await client.query("CREATE INDEX IF NOT EXISTS idx_sync_jobs_status ON sync_jobs(status, id)");
+/tmp/app/lib/db.ts:149:      CREATE TABLE IF NOT EXISTS document_configs (
+/tmp/app/lib/db.ts:158:    await client.query("ALTER TABLE sync_sources ADD COLUMN IF NOT EXISTS baidu_limit INTEGER NOT NULL DEFAULT 0");
+/tmp/app/lib/db.ts:159:    await client.query("ALTER TABLE sync_sources ADD COLUMN IF NOT EXISTS quark_limit INTEGER NOT NULL DEFAULT 0");
+/tmp/app/lib/db.ts:160:    await client.query("ALTER TABLE sync_sources ADD COLUMN IF NOT EXISTS last_changed_at TIMESTAMPTZ");
+/tmp/app/lib/db.ts:161:    await client.query("ALTER TABLE sync_sources ADD COLUMN IF NOT EXISTS watch_error TEXT NOT NULL DEFAULT ''");
+/tmp/app/lib/db.ts:162:    await client.query("ALTER TABLE sync_sources ADD COLUMN IF NOT EXISTS applied_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb");
+/tmp/app/lib/db.ts:163:    await client.query("ALTER TABLE sync_sources ADD COLUMN IF NOT EXISTS pending_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb");
+/tmp/app/lib/db.ts:164:    await client.query("ALTER TABLE sync_sources ADD COLUMN IF NOT EXISTS pending_changes JSONB NOT NULL DEFAULT '[]'::jsonb");
+/tmp/app/lib/db.ts:165:    await client.query("ALTER TABLE sync_sources ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+/tmp/app/lib/db.ts:166:    await client.query("ALTER TABLE sync_items ADD COLUMN IF NOT EXISTS resource_key TEXT NOT NULL DEFAULT ''");
+/tmp/app/lib/db.ts:177:export async function ensureDb() {
+/tmp/app/lib/db.ts:182:export async function rows<T extends QueryResultRow = QueryResultRow>(text: string, values: unknown[] = []) {
+/tmp/app/lib/db.ts:187:export async function one<T extends QueryResultRow = QueryResultRow>(text: string, values: unknown[] = []) {
+/tmp/app/lib/db.ts:192:export async function execute(text: string, values: unknown[] = []) {
+/tmp/app/lib/db.ts:197:export async function transaction<T>(fn: (client: PoolClient) => Promise<T>) {
+/tmp/app/lib/quark-client.ts:10:async function quarkRequest<T>(path: string, cookie: string, init?: RequestInit): Promise<T> {
+/tmp/app/lib/quark-client.ts:11:  const response = await fetch(`${BASE}${path}`, { ...init, cache: "no-store", headers: { Accept: "application/json, text/plain, */*", "Content-Type": "application/json;charset=UTF-8", Cookie: cookie, Origin: "https://pan.quark.cn", Referer: "https://pan.quark.cn/", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36", ...(init?.headers || {}) } });
+/tmp/app/lib/quark-client.ts:16:  if (!payload.data) throw new Error(payload.message || "夸克接口未返回数据，请更新 Cookie");
+/tmp/app/lib/quark-client.ts:20:async function listFolder(cookie: string, parentFid: string) {
+/tmp/app/lib/quark-client.ts:25:async function listShareFolder(cookie: string, pwdId: string, stoken: string, parentFid: string) {
+/tmp/app/lib/quark-client.ts:30:async function createFolder(cookie: string, parentFid: string, name: string) {
+/tmp/app/lib/quark-client.ts:36:async function deleteFiles(cookie: string, fids: string[]) {
+/tmp/app/lib/quark-client.ts:41:async function resolveFolder(cookie: string, folderPath: string, allowCreate: boolean) {
+/tmp/app/lib/quark-client.ts:54:async function waitTask(cookie: string, taskId: string) {
+/tmp/app/lib/quark-client.ts:73:async function saveShareFiles(cookie: string, pwdId: string, stoken: string, sourceParentFid: string, targetFid: string, files: QuarkFile[]) {
+/tmp/app/lib/quark-client.ts:85:async function syncFolder(cookie: string, pwdId: string, stoken: string, sourceFid: string, targetFid: string) {
+/tmp/app/lib/quark-client.ts:99:      await syncFolder(cookie, pwdId, stoken, source.fid, childTarget);
+/tmp/app/lib/quark-client.ts:107:async function fingerprintTree(cookie: string, pwdId: string, stoken: string, parentFid: string, prefix = "") : Promise<string[]> {
+/tmp/app/lib/quark-client.ts:118:async function createShare(cookie: string, name: string, fids: string[]) {
+/tmp/app/lib/quark-client.ts:129:export async function transferAndShareQuark(input: { cookie: string; sourceUrl: string; name: string; targetFolder: string; createTargetFolder: boolean; previousShareUrl?: string; previousFingerprint?: string }) {
+/tmp/app/lib/quark-client.ts:132:  if (!token.stoken) throw new Error("无法读取夸克分享，请确认链接有效且 Cookie 未过期");
+/tmp/app/lib/quark-client.ts:149:  if (singleRootFolder) await syncFolder(input.cookie, pwdId, token.stoken, singleRootFolder.fid, managedFid);
+/tmp/app/lib/quark-client.ts:150:  else await syncFolder(input.cookie, pwdId, token.stoken, "0", managedFid);
+/tmp/app/lib/quark-client.ts:156:export async function deleteQuarkFiles(cookie: string, remoteIds: string[]) { await deleteFiles(cookie, remoteIds); }
+/tmp/app/lib/sync-queue.ts:19:async function callExternalConnector(endpoint: string, token: string | undefined, cookie: string, payload: Record<string, unknown>) {
+/tmp/app/lib/sync-queue.ts:20:  const headers: Record<string, string> = { "Content-Type": "application/json", "X-Netdisk-Cookie": cookie };
+/tmp/app/lib/sync-queue.ts:28:async function processProvider(item: Item, provider: Provider) {
+/tmp/app/lib/sync-queue.ts:42:  if (!config?.encrypted_cookie) throw new Error(`${providerName}网盘尚未填写 Cookie`);
+/tmp/app/lib/sync-queue.ts:43:  await execute(`UPDATE sync_items SET ${statusColumn}='syncing', last_error='', updated_at=NOW() WHERE id=$1`, [item.id]);
+/tmp/app/lib/sync-queue.ts:54:    await transaction(async (client) => {
+/tmp/app/lib/sync-queue.ts:55:      await client.query(`UPDATE sync_items SET ${targetColumn}=$1, ${statusColumn}='synced', last_synced_at=NOW(), last_error='', updated_at=NOW() WHERE id=$2`, [result.shareUrl, item.id]);
+/tmp/app/lib/sync-queue.ts:63:    await execute(`UPDATE sync_items SET ${statusColumn}='failed', last_error=$1, updated_at=NOW() WHERE id=$2`, [message, item.id]);
+/tmp/app/lib/sync-queue.ts:68:async function claimJobs(limit: number) {
+/tmp/app/lib/sync-queue.ts:69:  return transaction(async (client) => {
+/tmp/app/lib/sync-queue.ts:72:        SELECT id FROM sync_jobs
+/tmp/app/lib/sync-queue.ts:78:      UPDATE sync_jobs j
+/tmp/app/lib/sync-queue.ts:88:async function processJob(job: Job) {
+/tmp/app/lib/sync-queue.ts:89:  const item = await one<Item>("SELECT * FROM sync_items WHERE id=$1", [job.item_id]);
+/tmp/app/lib/sync-queue.ts:91:    await execute("UPDATE sync_jobs SET status='failed', last_error='资源记录不存在', finished_at=NOW() WHERE id=$1", [job.id]);
+/tmp/app/lib/sync-queue.ts:96:    await execute("UPDATE sync_jobs SET status='success', last_error='', finished_at=NOW() WHERE id=$1", [job.id]);
+/tmp/app/lib/sync-queue.ts:99:    const current = await one<{ attempts: number }>("SELECT attempts FROM sync_jobs WHERE id=$1", [job.id]);
+/tmp/app/lib/sync-queue.ts:100:    const permanent = /同时禁止公开和私密分享|Cookie 已失效|链接已失效/.test(message);
+/tmp/app/lib/sync-queue.ts:101:    if (!permanent && Number(current?.attempts || 0) < 3) await execute("UPDATE sync_jobs SET status='pending', last_error=$1 WHERE id=$2", [message, job.id]);
+/tmp/app/lib/sync-queue.ts:102:    else await execute("UPDATE sync_jobs SET status='failed', last_error=$1, finished_at=NOW() WHERE id=$2", [message, job.id]);
+/tmp/app/lib/sync-queue.ts:109:  void (async () => {
+/tmp/app/lib/sync-queue.ts:111:      await execute("UPDATE sync_jobs SET status='pending' WHERE status='running' AND started_at < NOW() - INTERVAL '15 minutes'");
+/tmp/app/lib/sync-queue.ts:124:        const pending = await one("SELECT 1 FROM sync_jobs WHERE status='pending' LIMIT 1");
+/tmp/app/lib/sync-queue.ts:133:export async function enqueueProviderJobs(entries: Array<{ itemId: number; providers: Provider[] }>) {
+/tmp/app/lib/sync-queue.ts:136:  await transaction(async (client) => {
+/tmp/app/lib/sync-queue.ts:140:          INSERT INTO sync_jobs (item_id, provider, status, attempts, last_error, created_at, started_at, finished_at)
+/tmp/app/lib/sync-queue.ts:153:export async function enqueueSyncJobs(itemId?: number) {
+/tmp/app/lib/sync-queue.ts:155:    ? await rows<Item>("SELECT * FROM sync_items WHERE id=$1", [itemId])
+/tmp/app/lib/sync-queue.ts:156:    : await rows<Item>("SELECT * FROM sync_items ORDER BY source_id, id");
+/tmp/app/lib/sync-queue.ts:158:  const limits = await rows<SourceLimit>("SELECT id, baidu_limit, quark_limit FROM sync_sources");
+/tmp/app/lib/sync-queue.ts:181:export async function getSyncJobStats() {
+/tmp/app/lib/sync-queue.ts:182:  const grouped = await rows<{ status: string; count: number }>("SELECT status, COUNT(*) AS count FROM sync_jobs GROUP BY status");
+/tmp/app/lib/baidu-folder-sync.ts:12:async function listTarget(cookie: string, path: string, bdstoken: string) {
+/tmp/app/lib/baidu-folder-sync.ts:13:  const response = await fetch(`${PAN}/api/list?${COMMON}&bdstoken=${encodeURIComponent(bdstoken)}&dir=${encodeURIComponent(path)}&order=name&desc=0&showempty=0&page=1&num=1000`, { cache: "no-store", headers: { Cookie: cookie, Referer: `${PAN}/disk/main`, "User-Agent": UA } });
+/tmp/app/lib/baidu-folder-sync.ts:23:export async function syncBaiduShareFolders(context: Context, roots: BaiduFile[], targetRoot: string) {
+/tmp/app/lib/baidu-folder-sync.ts:29:  async function syncLevel(sourceFiles: BaiduFile[], targetParent: string) {
+/tmp/app/lib/baidu-folder-sync.ts:45:      await syncLevel(children, childTarget);
+/tmp/app/lib/baidu-folder-sync.ts:49:  await syncLevel(roots, targetRoot);
+/tmp/app/lib/baidu-transfer.ts:13:export async function performBaiduTransfer(input: {
+/tmp/app/lib/baidu-transfer.ts:23:  const url = `${PAN}/share/transfer?shareid=${encodeURIComponent(input.shareId)}&from=${encodeURIComponent(input.uk)}&sekey=${encodeURIComponent(input.sekey)}&ondup=overwrite&async=1&${COMMON}&bdstoken=${encodeURIComponent(input.bdstoken)}`;
+/tmp/app/lib/baidu-transfer.ts:29:      Cookie: input.cookie,
+/tmp/app/lib/baidu-client.ts:2:import { syncBaiduShareFolders } from "@/lib/baidu-folder-sync";
+/tmp/app/lib/baidu-client.ts:11:async function requestJson<T extends JsonRecord>(url: string, cookie: string, init?: RequestInit): Promise<T> {
+/tmp/app/lib/baidu-client.ts:12:  const response = await fetch(url, { ...init, cache: "no-store", redirect: "follow", headers: { Accept: "application/json, text/plain, */*", Cookie: cookie, Referer: `${PAN}/disk/main`, "User-Agent": UA, ...(init?.headers || {}) } });
+/tmp/app/lib/baidu-client.ts:18:    if (errno === -6 || errno === 111 || errno === 31045) throw new Error("百度 Cookie 已失效，请重新填写");
+/tmp/app/lib/baidu-client.ts:24:async function getBdstoken(cookie: string) {
+/tmp/app/lib/baidu-client.ts:26:  if (!data.result?.bdstoken) throw new Error("无法获取百度登录凭据，请更新 Cookie");
+/tmp/app/lib/baidu-client.ts:30:async function listFolder(cookie: string, path: string, bdstoken: string) {
+/tmp/app/lib/baidu-client.ts:35:async function createFolder(cookie: string, path: string, bdstoken: string, allowCreate: boolean) {
+/tmp/app/lib/baidu-client.ts:42:async function resolveFolder(cookie: string, folderPath: string, bdstoken: string, allowCreate: boolean) {
+/tmp/app/lib/baidu-client.ts:54:async function createShare(cookie: string, bdstoken: string, name: string, fids: number[]) {
+/tmp/app/lib/baidu-client.ts:55:  const submit = async (schannel: "0" | "4", pwd: string) => {
+/tmp/app/lib/baidu-client.ts:69:    catch { throw new Error("文件已转存成功，但当前百度账号同时禁止公开和私密分享，请更新可正常分享的账号 Cookie"); }
+/tmp/app/lib/baidu-client.ts:73:export async function transferAndShareBaidu(input: { cookie: string; sourceUrl: string; name: string; targetFolder: string; createTargetFolder: boolean; previousShareUrl?: string; previousFingerprint?: string }) {
+/tmp/app/lib/baidu-client.ts:77:  const synced = await syncBaiduShareFolders({ cookie: share.cookie, shareId: share.shareId, uk: share.uk, shorturl: share.shorturl, sekey: share.sekey, sourceUrl: input.sourceUrl, bdstoken }, share.files, targetPath);
+/tmp/app/lib/baidu-client.ts:78:  if (!synced.changed && synced.fingerprint === input.previousFingerprint && input.previousShareUrl) return { shareUrl: input.previousShareUrl, fingerprint: synced.fingerprint, changed: false, remotePaths: synced.remotePaths };
+/tmp/app/lib/baidu-client.ts:79:  const shareUrl = await createShare(share.cookie, bdstoken, input.name, synced.rootFids);
+/tmp/app/lib/baidu-client.ts:80:  return { shareUrl, fingerprint: synced.fingerprint, changed: synced.changed, remotePaths: synced.remotePaths };
+/tmp/app/lib/document-watch.ts:4:import { scrapeDocument } from "@/lib/scrape-document";
+/tmp/app/lib/document-watch.ts:5:import { parseResourceRows, ResourceRow } from "@/lib/resource-document-parser";
+/tmp/app/lib/document-watch.ts:7:import { enqueueProviderJobs } from "@/lib/sync-queue";
+/tmp/app/lib/document-watch.ts:20:  document_url: string;
+/tmp/app/lib/document-watch.ts:27:  watch_error: string;
+/tmp/app/lib/document-watch.ts:102:export async function readSharedDocument(documentUrl: string, fallbackContent = "") {
+/tmp/app/lib/document-watch.ts:103:  const config = await one<{ encrypted_cookie?: string }>("SELECT encrypted_cookie FROM document_configs WHERE id=1");
+/tmp/app/lib/document-watch.ts:108:  if (/kdocs\.cn$/i.test(new URL(documentUrl).hostname) && !cookie && !fallbackContent.trim()) {
+/tmp/app/lib/document-watch.ts:109:    throw new Error("金山云文档需要登录访问，请先在导入区域保存云文档 Cookie");
+/tmp/app/lib/document-watch.ts:112:    const scraped = await scrapeDocument(documentUrl, cookie);
+/tmp/app/lib/document-watch.ts:178:    error: source.watch_error || "",
+/tmp/app/lib/document-watch.ts:184:export async function getWatchState(sourceId?: number) {
+/tmp/app/lib/document-watch.ts:186:    ? await one<SourceRow>("SELECT * FROM sync_sources WHERE id=$1", [sourceId])
+/tmp/app/lib/document-watch.ts:187:    : await one<SourceRow>("SELECT * FROM sync_sources ORDER BY id DESC LIMIT 1");
+/tmp/app/lib/document-watch.ts:191:export async function checkSourceChanges(sourceId?: number) {
+/tmp/app/lib/document-watch.ts:193:    ? await one<SourceRow>("SELECT * FROM sync_sources WHERE id=$1", [sourceId])
+/tmp/app/lib/document-watch.ts:194:    : await one<SourceRow>("SELECT * FROM sync_sources ORDER BY id DESC LIMIT 1");
+/tmp/app/lib/document-watch.ts:195:  if (!source) throw new Error("请先导入共享文档");
+/tmp/app/lib/document-watch.ts:198:    const rawRows = await readSharedDocument(source.document_url);
+/tmp/app/lib/document-watch.ts:204:      : snapshotFromDbItems(await rows<SyncItemRow>("SELECT id, source_id, name, resource_key, source_baidu_url, source_quark_url FROM sync_items WHERE source_id=$1 ORDER BY id", [source.id]));
+/tmp/app/lib/document-watch.ts:207:      UPDATE sync_sources SET
+/tmp/app/lib/document-watch.ts:210:        watch_error='',
+/tmp/app/lib/document-watch.ts:219:    const message = error instanceof Error ? error.message : "共享文档检查失败";
+/tmp/app/lib/document-watch.ts:220:    await execute("UPDATE sync_sources SET last_checked_at=NOW(), watch_error=$1, updated_at=NOW() WHERE id=$2", [message, source.id]);
+/tmp/app/lib/document-watch.ts:232:async function removeDbItem(client: PoolClient, itemId: number) {
+/tmp/app/lib/document-watch.ts:233:  await client.query("DELETE FROM sync_jobs WHERE item_id=$1", [itemId]);
+/tmp/app/lib/document-watch.ts:236:  await client.query("DELETE FROM sync_items WHERE id=$1", [itemId]);
+/tmp/app/lib/document-watch.ts:239:export async function applyPendingChanges(sourceId?: number) {
+/tmp/app/lib/document-watch.ts:241:    ? await one<SourceRow>("SELECT * FROM sync_sources WHERE id=$1", [sourceId])
+/tmp/app/lib/document-watch.ts:242:    : await one<SourceRow>("SELECT * FROM sync_sources ORDER BY id DESC LIMIT 1");
+/tmp/app/lib/document-watch.ts:243:  if (!source) throw new Error("请先导入共享文档");
+/tmp/app/lib/document-watch.ts:251:  await transaction(async (client) => {
+/tmp/app/lib/document-watch.ts:252:    const existingResult = await client.query<SyncItemRow>("SELECT id, source_id, name, resource_key, source_baidu_url, source_quark_url FROM sync_items WHERE source_id=$1 ORDER BY id", [source.id]);
+/tmp/app/lib/document-watch.ts:262:          await client.query(`UPDATE sync_items SET name=$1, resource_key=$2, source_baidu_url=$3, source_quark_url=$4, updated_at=NOW() WHERE id=$5`, [change.new.name, change.new.key, change.new.baidu, change.new.quark, current.id]);
+/tmp/app/lib/document-watch.ts:268:          INSERT INTO sync_items (source_id, name, resource_key, source_baidu_url, source_quark_url)
+/tmp/app/lib/document-watch.ts:283:          const inserted = await client.query<{ id: number }>("INSERT INTO sync_items (source_id, name, resource_key, source_baidu_url, source_quark_url) VALUES ($1,$2,$3,$4,$5) RETURNING id", [source.id, change.new.name, change.new.key, change.new.baidu, change.new.quark]);
+/tmp/app/lib/document-watch.ts:295:          UPDATE sync_items SET
+/tmp/app/lib/document-watch.ts:322:      UPDATE sync_sources SET applied_snapshot=$1::jsonb, pending_snapshot=$1::jsonb,
+/tmp/app/lib/document-watch.ts:323:        pending_changes='[]'::jsonb, watch_error='', updated_at=NOW()
+/tmp/app/lib/document-watch.ts:332:export async function checkDueSources() {
+/tmp/app/lib/document-watch.ts:334:    SELECT id FROM sync_sources
+/tmp/app/lib/document-watch.ts:335:    WHERE enabled=TRUE AND document_url<>''
+/tmp/app/lib/baidu-share.ts:8:async function jsonRequest<T extends JsonObject>(url: string, cookie: string, init?: RequestInit) {
+/tmp/app/lib/baidu-share.ts:9:  const response = await fetch(url, { ...init, cache: "no-store", redirect: "follow", headers: { Accept: "application/json, text/plain, */*", Cookie: cookie, Referer: "https://pan.baidu.com/", "User-Agent": UA, ...(init?.headers || {}) } });
+/tmp/app/lib/baidu-share.ts:15:    if (errno === -6 || errno === 111) throw new Error("百度 Cookie 已失效，请重新填写");
+/tmp/app/lib/baidu-share.ts:28:function replaceCookies(cookie: string, setCookie: string) {
+/tmp/app/lib/baidu-share.ts:31:    const value = setCookie.match(new RegExp(`${name}=([^;]+)`))?.[1];
+/tmp/app/lib/baidu-share.ts:39:async function verify(cookie: string, surl: string, passcode: string) {
+/tmp/app/lib/baidu-share.ts:45:    headers: { Accept: "application/json, text/plain, */*", Cookie: cookie, Referer: `${PAN}/share/init?surl=${encodeURIComponent(surl)}`, "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+/tmp/app/lib/baidu-share.ts:52:  const setCookie = response.headers.get("set-cookie") || `BDCLND=${data.randsk};`;
+/tmp/app/lib/baidu-share.ts:53:  return replaceCookies(cookie, setCookie);
+/tmp/app/lib/baidu-share.ts:64:export async function readBaiduShare(cookie: string, sourceUrl: string, _bdstoken: string) {
+/tmp/app/lib/baidu-share.ts:66:  const verifiedCookie = await verify(cookie, parts.surl, parts.passcode);
+/tmp/app/lib/baidu-share.ts:68:  const pageResponse = await fetch(pageUrl, { cache: "no-store", redirect: "follow", headers: { Cookie: verifiedCookie, "User-Agent": UA, Referer: `${PAN}/share/init?surl=${parts.surl}` } });
+/tmp/app/lib/baidu-share.ts:77:    verifiedCookie,
+/tmp/app/lib/baidu-share.ts:82:  const encodedSekey = verifiedCookie.match(/(?:^|;\s*)BDCLND=([^;]+)/)?.[1] || "";
+/tmp/app/lib/baidu-share.ts:83:  return { shareId, uk, shorturl: parts.shorturl, files, sekey: decodeURIComponent(encodedSekey), cookie: verifiedCookie };
+/tmp/app/lib/error-reporter.tsx:51:    window.fetch = async (...args: Parameters<typeof fetch>) => {
+/tmp/app/lib/error-reporter.tsx:101:async function postError(payload: ClientErrorPayload): Promise<void> {
+/tmp/app/lib/netdisk-delete.ts:7:async function jsonFetch<T>(url: string, cookie: string, init?: RequestInit): Promise<T> {
+/tmp/app/lib/netdisk-delete.ts:8:  const response = await fetch(url, { ...init, cache: "no-store", headers: { Accept: "application/json, text/plain, */*", Cookie: cookie, "User-Agent": UA, ...(init?.headers || {}) } });
+/tmp/app/lib/netdisk-delete.ts:21:async function deleteQuark({ cookie, sourceUrl, targetFolder }: DeleteInput) {
+/tmp/app/lib/netdisk-delete.ts:29:  if (!stoken) throw new Error("无法读取夸克来源文件，请更新 Cookie");
+/tmp/app/lib/netdisk-delete.ts:56:async function deleteBaidu({ cookie, sourceUrl, targetFolder }: DeleteInput) {
+/tmp/app/lib/netdisk-delete.ts:59:  if (!bdstoken) throw new Error("百度 Cookie 已失效，请重新填写");
+/tmp/app/lib/netdisk-delete.ts:60:  const sourceResponse = await fetch(sourceUrl, { cache: "no-store", redirect: "follow", headers: { Cookie: cookie, "User-Agent": UA } });
+/tmp/app/lib/netdisk-delete.ts:71:  await jsonFetch(`https://pan.baidu.com/api/filemanager?opera=delete&async=2&onnest=fail&newVerify=1&channel=chunlei&web=1&app_id=250528&clienttype=0&bdstoken=${encodeURIComponent(bdstoken)}`, cookie, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" }, body });
+/tmp/app/lib/netdisk-delete.ts:75:export async function deleteTransferredFiles(input: DeleteInput) {
+/tmp/app/lib/scrape-document.ts:13:async function directRead(url: string, cookie: string) {
+/tmp/app/lib/scrape-document.ts:21:      ...(cookie ? { Cookie: cookie } : {}),
+/tmp/app/lib/scrape-document.ts:31:export async function scrapeDocument(url: string, cookie = "") {
+/tmp/app/lib/scrape-document.ts:42:    body: JSON.stringify({ url: parsed.toString(), formats: ["markdown"], onlyMainContent: false, waitFor: 10000, timeout: 120000, ...(cookie ? { headers: { Cookie: cookie } } : {}) }),
+/tmp/app/lib/baidu-share-tree.ts:8:async function readList(url: string, context: ShareContext) {
+/tmp/app/lib/baidu-share-tree.ts:9:  const response = await fetch(url, { cache: "no-store", headers: { Accept: "application/json, text/plain, */*", Cookie: context.cookie, Referer: `${PAN}/s/${context.shorturl}`, "User-Agent": UA } });
+/tmp/app/lib/baidu-share-tree.ts:17:export async function listBaiduShareDirectory(context: ShareContext, path: string) {
+/tmp/app/lib/baidu-share-tree.ts:30:export async function readBaiduShareTree(context: ShareContext, roots: BaiduFile[]) {
+/tmp/app/lib/baidu-share-tree.ts:33:  async function walk(files: BaiduFile[]) {
+/tmp/app/lib/iframe-safe-cookie.ts:34:export function setSessionCookie(
+/tmp/app/lib/provider-asset-delete.ts:3:async function parseResponse(response: Response) {
+/tmp/app/lib/provider-asset-delete.ts:12:export async function deleteBaiduAssetPaths(cookie: string, paths: string[]) {
+/tmp/app/lib/provider-asset-delete.ts:14:  const tokenResponse = await fetch(`https://pan.baidu.com/api/gettemplatevariable?channel=chunlei&web=1&app_id=250528&clienttype=0&fields=${encodeURIComponent('["bdstoken"]')}`, { cache: "no-store", headers: { Cookie: cookie, "User-Agent": UA, Referer: "https://pan.baidu.com/disk/main" } });
+/tmp/app/lib/provider-asset-delete.ts:17:  if (!bdstoken) throw new Error("百度 Cookie 已失效，无法删除网盘文件");
+/tmp/app/lib/provider-asset-delete.ts:18:  const response = await fetch(`https://pan.baidu.com/api/filemanager?opera=delete&async=2&onnest=fail&newVerify=1&channel=chunlei&web=1&app_id=250528&clienttype=0&bdstoken=${encodeURIComponent(bdstoken)}`, {
+/tmp/app/lib/provider-asset-delete.ts:21:    headers: { Cookie: cookie, "User-Agent": UA, Referer: "https://pan.baidu.com/disk/main", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+/tmp/app/lib/provider-asset-delete.ts:28:export async function deleteQuarkAssetIds(cookie: string, ids: string[]) {
+/tmp/app/lib/provider-asset-delete.ts:33:    headers: { Cookie: cookie, "User-Agent": UA, Origin: "https://pan.quark.cn", Referer: "https://pan.quark.cn/", "Content-Type": "application/json;charset=UTF-8" },
+/tmp/app/app/globals.css:48:.status-pill.synced { background: #eaf9f1; color: #168052; }
+/tmp/app/app/globals.css:49:.status-pill.syncing { background: #eef1ff; color: #4f46e5; }
+/tmp/app/app/page.tsx:6:import { DeleteSyncItem } from "@/app/components/delete-sync-item";
+/tmp/app/app/page.tsx:10:type SyncItem = { id: number; name: string; source_baidu_url: string; source_quark_url: string; target_baidu_url: string; target_quark_url: string; baidu_status: string; quark_status: string; last_synced_at: string | null; last_error: string };
+/tmp/app/app/page.tsx:11:type SyncSource = { id?: number; document_url: string; monitor_interval: number; baidu_limit?: number; quark_limit?: number; enabled: boolean; last_checked_at: string | null };
+/tmp/app/app/page.tsx:12:type ItemStats = { total: number; synced: number; failed: number };
+/tmp/app/app/page.tsx:17:type StatusData = { source: SyncSource | null; items: SyncItem[]; itemStats: ItemStats; jobs: JobStats; watch: WatchState; connections: { baidu: ProviderConfig; quark: ProviderConfig } };
+/tmp/app/app/page.tsx:20:const statusText: Record<string, string> = { waiting_auth: "等待配置", syncing: "同步中", synced: "已同步", failed: "失败" };
+/tmp/app/app/page.tsx:24:  const [documentUrl, setDocumentUrl] = useState("https://www.kdocs.cn/l/crGmax2kqh88");
+/tmp/app/app/page.tsx:26:  const [documentCookie, setDocumentCookie] = useState("");
+/tmp/app/app/page.tsx:30:  const [data, setData] = useState<StatusData>({ source: null, items: [], itemStats: { total: 0, synced: 0, failed: 0 }, jobs: { pending: 0, running: 0, success: 0, failed: 0 }, watch: null, connections: { baidu: emptyProvider, quark: emptyProvider } });
+/tmp/app/app/page.tsx:33:  const [syncing, setSyncing] = useState(false);
+/tmp/app/app/page.tsx:40:  const refresh = async (quiet = false) => {
+/tmp/app/app/page.tsx:43:      const response = await fetch("/api/sync/status", { cache: "no-store" });
+/tmp/app/app/page.tsx:53:    setDocumentUrl(data.source.document_url || documentUrl);
+/tmp/app/app/page.tsx:57:  }, [data.source?.document_url]);
+/tmp/app/app/page.tsx:72:    const count = data.watch?.pendingCount || 0;
+/tmp/app/app/page.tsx:74:      new Notification("共享文档发现变化", { body: `检测到 ${count} 项变化，请打开系统确认并点击“只同步变化数据”。` });
+/tmp/app/app/page.tsx:77:  }, [data.watch?.pendingCount]);
+/tmp/app/app/page.tsx:81:    const timer = window.setInterval(async () => {
+/tmp/app/app/page.tsx:83:        await fetch("/api/sync/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+/tmp/app/app/page.tsx:90:  const counts = useMemo(() => ({ total: data.itemStats.total, synced: data.itemStats.synced || 0, failed: data.itemStats.failed || 0, waiting: Math.max(0, data.itemStats.total - (data.itemStats.synced || 0)) }), [data.itemStats]);
+/tmp/app/app/page.tsx:101:  const importDocument = async () => {
+/tmp/app/app/page.tsx:104:      const response = await fetch("/api/sync/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ documentUrl, documentCookie, content, interval, baiduLimit, quarkLimit }) });
+/tmp/app/app/page.tsx:107:      setDocumentCookie(""); setMessage(`已按限制导入 ${result.count} 条（文档共识别 ${result.detectedCount} 条）；百度 ${result.baiduCount} 条，夸克 ${result.quarkCount} 条`);
+/tmp/app/app/page.tsx:113:  const checkWatch = async () => {
+/tmp/app/app/page.tsx:116:      const response = await fetch("/api/watch/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sourceId: data.source?.id }) });
+/tmp/app/app/page.tsx:119:      const count = result.watch?.pendingCount || 0;
+/tmp/app/app/page.tsx:120:      setMessage(count ? `发现 ${count} 项文档变化，请确认后点击“只同步变化数据”` : "检查完成：共享文档没有变化");
+/tmp/app/app/page.tsx:122:    } catch (error) { reportClientError("共享文档检查失败", error); setMessage(error instanceof Error ? error.message : "检查失败"); }
+/tmp/app/app/page.tsx:126:  const applyWatch = async () => {
+/tmp/app/app/page.tsx:129:      const response = await fetch("/api/watch/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sourceId: data.source?.id }) });
+/tmp/app/app/page.tsx:135:    } catch (error) { reportClientError("应用共享文档变化失败", error); setMessage(error instanceof Error ? error.message : "变化同步失败"); }
+/tmp/app/app/page.tsx:139:  const enableNotifications = async () => {
+/tmp/app/app/page.tsx:145:  const runSync = async (itemId?: number) => {
+/tmp/app/app/page.tsx:148:      const response = await fetch("/api/sync/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(itemId ? { itemId } : {}) });
+/tmp/app/app/page.tsx:157:  const deleteAll = async () => { if (!window.confirm("确定删除全部资源吗？这会同时删除百度和夸克网盘中的已转存文件，且无法撤销。")) return; setDeletingAll(true); setMessage(""); try { const response = await fetch("/api/sync/items", { method: "DELETE" }); const result = await response.json(); if (!response.ok) throw new Error(result.error || "批量删除失败"); setMessage(`已删除全部 ${result.deleted} 条资源及对应网盘文件`); await refresh(true); } catch (error) { reportClientError("一键删除全部失败", error); setMessage(error instanceof Error ? error.message : "批量删除失败"); await refresh(true); } finally { setDeletingAll(false); } };
+/tmp/app/app/page.tsx:162:      <div><div className="mb-1 flex items-center gap-2 text-sm font-semibold text-indigo-600"><span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-600 text-white">云</span>影视资源库</div><h1 className="text-2xl font-bold tracking-tight sm:text-3xl">双网盘自动同步中心</h1><p className="mt-1 text-sm text-slate-500">Cookie 授权 · 指定转存目录 · 更新巡检 · 新链接导出</p></div>
+/tmp/app/app/page.tsx:167:      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="已导入资源" value={counts.total} hint="文档中的有效条目" /><Metric label="已生成新链接" value={counts.synced} hint="至少一个网盘已完成" tone="green" /><Metric label="等待处理" value={counts.waiting} hint="含待配置与同步中" tone="amber" /><Metric label="同步异常" value={counts.failed} hint="可单条重试" tone="red" /></section>
+/tmp/app/app/page.tsx:176:        <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(320px,1fr)_150px_150px_180px]"><label className="field"><span>云文档分享链接</span><input value={documentUrl} onChange={(e) => setDocumentUrl(e.target.value)} placeholder="粘贴仅查看的云文档分享链接" /></label><label className="field"><span>百度前多少条</span><input type="number" min={0} value={baiduLimit} onChange={(e) => setBaiduLimit(Math.max(0, Number(e.target.value) || 0))} /><small>0 表示全部</small></label><label className="field"><span>夸克前多少条</span><input type="number" min={0} value={quarkLimit} onChange={(e) => setQuarkLimit(Math.max(0, Number(e.target.value) || 0))} /><small>0 表示全部</small></label><label className="field"><span>巡检频率</span><select value={interval} onChange={(e) => setIntervalValue(Number(e.target.value))}><option value={5}>每 5 分钟</option><option value={15}>每 15 分钟</option><option value={30}>每 30 分钟</option><option value={60}>每 1 小时</option><option value={360}>每 6 小时</option></select></label><label className="field lg:col-span-4"><span>金山云文档 Cookie</span><input type="password" value={documentCookie} onChange={(e) => setDocumentCookie(e.target.value)} placeholder="首次填写金山文档网页版 Cookie，保存后可留空复用" /><small>只用于读取你有查看权限的完整文档，后台加密保存</small></label><label className="field lg:col-span-4"><span>可选：粘贴正文或上传 CSV</span><textarea rows={5} value={content} onChange={(e) => setContent(e.target.value)} placeholder="也可以粘贴正文作为读取失败时的备用内容" /></label></div>
+/tmp/app/app/page.tsx:177:        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"><label className="upload-button">选择 CSV 文件<input type="file" accept=".csv,.txt" onChange={readFile} /></label><button className="secondary-button" onClick={importDocument} disabled={importing}>{importing ? "正在识别全部资源…" : "识别全部并保存限制"}</button><span className="text-xs text-slate-400">数量限制只影响转存，识别结果会全部保留</span></div>
+/tmp/app/app/page.tsx:181:        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div className="section-title"><span className="step">4</span><div><h2>共享文档变化监听</h2><p>只提示新增、改名、链接或提取码变化；确认后仅同步发生变化的数据</p></div></div><div className="flex flex-wrap gap-2"><button className="secondary-button" onClick={checkWatch} disabled={checking || !data.source}>{checking ? "正在检查…" : "重新识别变化"}</button><button className="export-button" onClick={applyWatch} disabled={applying || !data.watch?.pendingCount}>{applying ? "正在处理…" : "只同步变化数据"}</button><button className="secondary-button" onClick={enableNotifications}>开启浏览器通知</button></div></div>
+/tmp/app/app/page.tsx:182:        <div className="mt-5 grid gap-3 sm:grid-cols-3"><WatchMetric label="待确认变化" value={data.watch?.pendingCount || 0} /><WatchMetric label="最后检查" value={formatTime(data.watch?.lastCheckedAt)} /><WatchMetric label="最后发现变化" value={formatTime(data.watch?.lastChangedAt)} /></div>
+/tmp/app/app/page.tsx:183:        {data.watch?.error && <div className="notice mt-4">监听错误：{data.watch.error}</div>}
+/tmp/app/app/page.tsx:184:        <div className="mt-4 space-y-2">{data.watch?.changes?.length ? data.watch.changes.map((change) => <ChangeRow key={`${change.type}-${change.key}`} change={change} />) : <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-400">当前没有待确认的文档变化</div>}</div>
+/tmp/app/app/page.tsx:188:        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div className="section-title"><span className="step">5</span><div><h2>转存与更新监控</h2><p>转存到上方指定文件夹，来源变化后重新分享并覆盖旧结果</p></div></div><div className="flex flex-wrap gap-2"><button className="secondary-button" onClick={() => runSync()} disabled={syncing || deletingAll || !data.items.length}>{syncing ? "同步中…" : "立即巡检全部"}</button><button className="rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 disabled:opacity-50" onClick={deleteAll} disabled={deletingAll || syncing || !data.items.length}>{deletingAll ? "正在删除全部…" : "一键删除全部"}</button><a className="export-button" href="/api/sync/export">导出新链接文档</a></div></div>
+/tmp/app/app/page.tsx:191:          {loading ? <tr><td colSpan={6} className="empty-row">正在加载…</td></tr> : data.items.length === 0 ? <tr><td colSpan={6} className="empty-row">导入文档后，资源会显示在这里</td></tr> : data.items.map((item) => <tr key={item.id}><td><b>{item.name}</b>{item.last_error && <small className="error-copy">{item.last_error}</small>}</td><td><LinkPair baidu={item.source_baidu_url} quark={item.source_quark_url} shortLink={shortLink} /></td><td><StatusPill status={item.baidu_status} /><small>{shortLink(item.target_baidu_url)}</small></td><td><StatusPill status={item.quark_status} /><small>{shortLink(item.target_quark_url)}</small></td><td><small>{item.last_synced_at ? new Date(item.last_synced_at).toLocaleString("zh-CN") : "尚未同步"}</small></td><td><div className="row-actions"><button className="row-button" onClick={() => runSync(item.id)} disabled={syncing}>重试</button><DeleteSyncItem id={item.id} name={item.name} onDeleted={() => refresh(true)} /></div></td></tr>)}
+/tmp/app/app/page.tsx:205:  return <div className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"><div><b className="text-sm text-slate-700">{detail}</b><small className="mt-1 block text-xs text-slate-400">删除变化只移除系统记录，不会删除网盘中已转存的文件</small></div><span className={`status-pill ${change.type === "added" ? "synced" : change.type === "removed" ? "failed" : "syncing"}`}>{changeText[change.type]}</span></div>;
+/tmp/app/app/api/sync/run/route.ts:2:import { enqueueSyncJobs, getSyncJobStats } from "@/lib/sync-queue";
+/tmp/app/app/api/sync/run/route.ts:4:export async function POST(request: NextRequest) {
+/tmp/app/app/api/sync/export/route.ts:8:export async function GET() {
+/tmp/app/app/api/sync/export/route.ts:11:      baidu_status, quark_status, last_synced_at
+/tmp/app/app/api/sync/export/route.ts:12:    FROM sync_items ORDER BY id
+/tmp/app/app/api/sync/export/route.ts:25:      row.last_synced_at,
+/tmp/app/app/api/sync/export/route.ts:32:      "Content-Disposition": `attachment; filename="media-sync-${new Date().toISOString().slice(0, 10)}.csv"`,
+/tmp/app/app/api/sync/status/route.ts:3:import { getSyncJobStats, startSyncWorker } from "@/lib/sync-queue";
+/tmp/app/app/api/sync/status/route.ts:4:import { getWatchState } from "@/lib/document-watch";
+/tmp/app/app/api/sync/status/route.ts:8:export async function GET() {
+/tmp/app/app/api/sync/status/route.ts:10:  const [source, items, itemStats, configs, jobs, watch] = await Promise.all([
+/tmp/app/app/api/sync/status/route.ts:11:    one("SELECT * FROM sync_sources ORDER BY id DESC LIMIT 1"),
+/tmp/app/app/api/sync/status/route.ts:12:    rows("SELECT * FROM sync_items ORDER BY id DESC LIMIT 200"),
+/tmp/app/app/api/sync/status/route.ts:13:    one<{ total: number; synced: number; failed: number }>(`
+/tmp/app/app/api/sync/status/route.ts:15:        COUNT(*) FILTER (WHERE baidu_status='synced' OR quark_status='synced') AS synced,
+/tmp/app/app/api/sync/status/route.ts:17:      FROM sync_items
+/tmp/app/app/api/sync/status/route.ts:29:  return NextResponse.json({ source, items, itemStats: itemStats || { total: 0, synced: 0, failed: 0 }, jobs, watch, connections: { baidu: configMap.baidu || empty, quark: configMap.quark || empty } });
+/tmp/app/app/api/sync/items/[id]/route.ts:16:export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+/tmp/app/app/api/sync/items/[id]/route.ts:18:  const item = await one<Item>("SELECT * FROM sync_items WHERE id=$1", [Number(id)]);
+/tmp/app/app/api/sync/items/[id]/route.ts:33:    if (!config?.encrypted_cookie) { errors.push(`${provider === "baidu" ? "百度" : "夸克"}网盘 Cookie 未配置`); continue; }
+/tmp/app/app/api/sync/items/[id]/route.ts:56:  await transaction(async (client) => {
+/tmp/app/app/api/sync/items/[id]/route.ts:59:    await client.query("DELETE FROM sync_jobs WHERE item_id=$1", [item.id]);
+/tmp/app/app/api/sync/items/[id]/route.ts:60:    await client.query("DELETE FROM sync_items WHERE id=$1", [item.id]);
+/tmp/app/app/api/sync/items/route.ts:3:import { DELETE as deleteSingleItem } from "@/app/api/sync/items/[id]/route";
+/tmp/app/app/api/sync/items/route.ts:5:export async function DELETE(request: NextRequest) {
+/tmp/app/app/api/sync/items/route.ts:6:  const items = await rows<{ id: number; name: string }>("SELECT id, name FROM sync_items ORDER BY id");
+/tmp/app/app/api/sync/items/route.ts:21:  await transaction(async (client) => {
+/tmp/app/app/api/sync/items/route.ts:22:    await client.query("DELETE FROM sync_jobs WHERE item_id NOT IN (SELECT id FROM sync_items)");
+/tmp/app/app/api/sync/items/route.ts:23:    await client.query("DELETE FROM provider_assets WHERE item_id NOT IN (SELECT id FROM sync_items)");
+/tmp/app/app/api/sync/items/route.ts:24:    await client.query("DELETE FROM provider_fingerprints WHERE item_id NOT IN (SELECT id FROM sync_items)");
+/tmp/app/app/api/sync/items/route.ts:25:    if (!errors.length) await client.query("DELETE FROM sync_sources");
+/tmp/app/app/api/sync/import/route.ts:4:import { applyProviderLimits, makeResourceKey, readSharedDocument } from "@/lib/document-watch";
+/tmp/app/app/api/sync/import/route.ts:8:export async function POST(request: NextRequest) {
+/tmp/app/app/api/sync/import/route.ts:9:  const body = await request.json() as { documentUrl?: string; documentCookie?: string; content?: string; interval?: number; baiduLimit?: number; quarkLimit?: number };
+/tmp/app/app/api/sync/import/route.ts:10:  const documentUrl = body.documentUrl?.trim() || "";
+/tmp/app/app/api/sync/import/route.ts:11:  if (!documentUrl) return NextResponse.json({ error: "请填写云文档分享链接" }, { status: 400 });
+/tmp/app/app/api/sync/import/route.ts:13:  try { new URL(documentUrl); } catch { return NextResponse.json({ error: "云文档分享链接格式不正确" }, { status: 400 }); }
+/tmp/app/app/api/sync/import/route.ts:15:  const submittedCookie = body.documentCookie?.trim() || "";
+/tmp/app/app/api/sync/import/route.ts:16:  if (submittedCookie) {
+/tmp/app/app/api/sync/import/route.ts:17:    await transaction(async (client) => {
+/tmp/app/app/api/sync/import/route.ts:19:        INSERT INTO document_configs (id, encrypted_cookie, cookie_hint, updated_at)
+/tmp/app/app/api/sync/import/route.ts:22:      `, [encryptSecret(submittedCookie), submittedCookie.slice(0, 8) + "…"]);
+/tmp/app/app/api/sync/import/route.ts:28:    detected = await readSharedDocument(documentUrl, body.content || "");
+/tmp/app/app/api/sync/import/route.ts:41:  const sourceId = await transaction(async (client) => {
+/tmp/app/app/api/sync/import/route.ts:42:    const existing = await client.query<{ id: number }>("SELECT id FROM sync_sources WHERE document_url=$1 ORDER BY id DESC LIMIT 1", [documentUrl]);
+/tmp/app/app/api/sync/import/route.ts:46:        INSERT INTO sync_sources (document_url, monitor_interval, baidu_limit, quark_limit, enabled)
+/tmp/app/app/api/sync/import/route.ts:49:      `, [documentUrl, monitorInterval, baiduLimit, quarkLimit]);
+/tmp/app/app/api/sync/import/route.ts:53:        UPDATE sync_sources SET monitor_interval=$1, baidu_limit=$2, quark_limit=$3,
+/tmp/app/app/api/sync/import/route.ts:60:      "SELECT id, name, target_baidu_url, target_quark_url FROM sync_items WHERE source_id=$1",
+/tmp/app/app/api/sync/import/route.ts:67:    if (staleIds.length) await client.query("DELETE FROM sync_items WHERE id=ANY($1::bigint[])", [staleIds]);
+/tmp/app/app/api/sync/import/route.ts:72:        INSERT INTO sync_items (source_id, name, resource_key, source_baidu_url, source_quark_url)
+/tmp/app/app/api/sync/import/route.ts:84:      UPDATE sync_sources SET
+/tmp/app/app/api/sync/import/route.ts:93:  const source = await one<{ id: number }>("SELECT id FROM sync_sources WHERE id=$1", [sourceId]);
+/tmp/app/app/api/providers/config/route.ts:23:function normalizeCookie(value: string) {
+/tmp/app/app/api/providers/config/route.ts:38:export async function GET() {
+/tmp/app/app/api/providers/config/route.ts:47:export async function POST(request: NextRequest) {
+/tmp/app/app/api/providers/config/route.ts:52:  const cookie = normalizeCookie(body.cookie || "");
+/tmp/app/app/api/providers/config/route.ts:53:  if (!cookie && !existing?.encrypted_cookie) return NextResponse.json({ error: "请输入 Cookie" }, { status: 400 });
+/tmp/app/app/api/providers/config/route.ts:58:  const encryptedCookie = cookie ? encryptSecret(cookie) : existing?.encrypted_cookie || "";
+/tmp/app/app/api/providers/config/route.ts:71:  `, [provider, encryptedCookie, cookieHint, targetFolder, JSON.stringify(folders), body.createFolder !== false]);
+/tmp/app/app/api/resources/route.ts:11:export async function GET() {
+/tmp/app/app/api/resources/route.ts:15:export async function POST(request: NextRequest) {
+/tmp/app/app/api/tv/lookup/route.ts:25:export async function GET(request: NextRequest) {
+/tmp/app/app/api/luffy-platform-error/route.ts:30:export async function POST(req: NextRequest): Promise<NextResponse> {
+/tmp/app/app/api/health/route.ts:4:export async function GET() {
+/tmp/app/app/api/watch/check/route.ts:2:import { checkSourceChanges } from "@/lib/document-watch";
+/tmp/app/app/api/watch/check/route.ts:4:export async function POST(request: NextRequest) {
+/tmp/app/app/api/watch/check/route.ts:7:    const watch = await checkSourceChanges(body.sourceId);
+/tmp/app/app/api/watch/check/route.ts:8:    return NextResponse.json({ ok: true, watch });
+/tmp/app/app/api/watch/check/route.ts:10:    return NextResponse.json({ error: error instanceof Error ? error.message : "共享文档检查失败" }, { status: 502 });
+/tmp/app/app/api/watch/cron/route.ts:3:import { checkDueSources } from "@/lib/document-watch";
+/tmp/app/app/api/watch/cron/route.ts:11:export async function GET(request: NextRequest) {
+/tmp/app/app/api/watch/apply/route.ts:2:import { applyPendingChanges } from "@/lib/document-watch";
+/tmp/app/app/api/watch/apply/route.ts:4:export async function POST(request: NextRequest) {
+/tmp/app/app/components/netdisk-setup.tsx:9:  const [cookie, setCookie] = useState("");
+/tmp/app/app/components/netdisk-setup.tsx:23:  const save = async () => {
+/tmp/app/app/components/netdisk-setup.tsx:35:      setCookie("");
+/tmp/app/app/components/netdisk-setup.tsx:38:      setNote("Cookie 和转存目录已安全保存");
+/tmp/app/app/components/netdisk-setup.tsx:48:    <div className="section-title"><span className="step">{provider === "baidu" ? "1" : "2"}</span><div><h2>{name}配置</h2><p>Cookie 加密保存，不会在页面中回显</p></div></div>
+/tmp/app/app/components/netdisk-setup.tsx:50:      <label className="field"><span>Cookie {config.connected && <em>已保存：{config.cookieHint}</em>}</span><textarea rows={3} value={cookie} onChange={(e) => setCookie(e.target.value)} placeholder={config.connected ? "留空表示继续使用已保存的 Cookie" : `粘贴${name}网页版完整 Cookie`} /></label>
+/tmp/app/app/components/delete-sync-item.tsx:8:  const remove = async () => {
+/tmp/app/app/components/delete-sync-item.tsx:13:      const response = await fetch(`/api/sync/items/${id}`, { method: "DELETE" });

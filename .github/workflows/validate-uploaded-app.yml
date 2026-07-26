@@ -1,0 +1,33 @@
+name: Validate uploaded Next.js app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Extract uploaded app source and KDocs overlay
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/app
+          cat deploy-source/app-lite.part* | base64 -d | tar -xz -C /tmp/app
+          base64 -d deploy-source/kdocs-cookie-override.b64 | tar -xz -C /tmp/app
+      - name: Install dependencies
+        working-directory: /tmp/app
+        run: npm install --no-audit --no-fund
+      - name: TypeScript and Next.js build
+        working-directory: /tmp/app
+        run: npm run build
+      - name: Validate Docker image
+        run: docker build -t netdisk-auto-sync:kdocs-cookie .
